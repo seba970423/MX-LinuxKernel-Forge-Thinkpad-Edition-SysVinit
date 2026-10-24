@@ -43,7 +43,7 @@ mx_apt_install() {
 
 mx_base_packages() {
     printf '%s\n' build-essential git ca-certificates curl gnupg dirmngr \
-        bc bison flex m4 libssl-dev libelf-dev libncurses-dev zlib1g-dev \
+        bc bison flex m4 libssl-dev libelf-dev libdw-dev libncurses-dev zlib1g-dev \
         libzstd-dev libxxhash-dev pahole cpio rsync xz-utils zstd lz4 \
         gettext pkg-config python3 perl patch fakeroot dpkg-dev debhelper kmod
 }
