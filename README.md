@@ -14,11 +14,17 @@ other ThinkPad hardware. Run on the target ThinkPad for native CPU optimization.
 
 ## Run
 
-Extract the project, enter its directory and run **as your regular user**:
+Clone the project and run **as your regular user**:
 
 ```bash
+git clone https://github.com/seba970423/MX-LinuxKernel-Forge-Thinkpad-Edition-SysVinit.git
+cd MX-LinuxKernel-Forge-Thinkpad-Edition-SysVinit
 ./builder.sh
 ```
+
+The launchers, standalone preparation helpers and test scripts have executable
+permissions recorded in Git. A fresh clone needs no manual `chmod` step.
+An extracted release archive can be used the same way.
 
 The builder offers to install missing Debian development packages through APT.
 It requests sudo only for dependencies and optional kernel installation. You
@@ -31,9 +37,10 @@ Prepare sources and validate the configuration without compiling a kernel:
 ./builder-dry-run.sh
 ```
 
-This downloads source archives and builds the small host tools needed for
-configuration. It can install build dependencies after confirmation. It does
-not compile or install the kernel itself.
+This downloads source archives and builds the preparation tools and Rust
+objects required by the selected source. It can install build dependencies
+after confirmation. It does not build the complete kernel image or Debian
+kernel packages, and it does not install a kernel.
 
 Install the common build dependencies separately if desired:
 
@@ -69,8 +76,15 @@ it never enables testing/unstable or adds an external APT repository.
   builder can install Debian's Rust packages when adequate. If they are too old,
   it offers a private, version-pinned official Rust toolchain under the build
   directory, with `rust-src` and `rustfmt`, without changing the user's global Rust default.
-- If the available bindgen package is too old, the required bindgen-cli version
-  can be built privately with Cargo and its locked dependency set.
+- Bindgen must pass a real forward-declaration/definition check with the final
+  selected libclang, after any Rust-LTO LLVM adjustment. Libclang 22 exposes a
+  known defect in unpatched bindgen versions older than 0.72.1: real structure
+  fields can become opaque `_address` placeholders. A distro version with the
+  fix backported is accepted when the generated member is correct. Otherwise,
+  a compatible APT version is preferred, or bindgen-cli is built privately with
+  Cargo, `--locked`, and a pinned version satisfying both the source minimum and
+  the libclang compatibility requirement. The resulting binary is tested again
+  and retained in the shared preparation/build/install environment.
 - Missing or incompatible tools stop the run. Losing Rust, BTF, CFI or the selected LTO mode during
   configuration is an error; the builder does not disable them as a workaround.
 
@@ -141,6 +155,9 @@ also live there. Each selected flavor keeps:
 - `.kernelforge-built-packages`: the exact image/headers install manifest;
 - `.kernelforge-package-checksums`: hashes checked before installation;
 - `packages/`: generated Debian artifacts, outside disposable source directories.
+
+The small bindgen compatibility header, generated bindings and diagnostics are
+retained under `toolchain/bindgen-probe/` for troubleshooting.
 
 The optional existing post-install cleanup retains packages, source downloads,
 logs, patches, private toolchains and copies of final/baseline configurations.

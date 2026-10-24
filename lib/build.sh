@@ -53,7 +53,7 @@ prepare_upstream_source() {
 
     # This function is used in command substitution. Keep stdout reserved
     # exclusively for the final kernel-tree path.
-    printf '==> Verifying and preparing %s sources (no kernel compilation)...\n' "$variant" >&2
+    printf '==> Verifying and preparing %s sources (no kernel package build)...\n' "$variant" >&2
     printf '==> Detailed prepare log: %s\n' "$log_file" >&2
 
     if ! bash "$REPO_ROOT/lib/prepare.sh" "$package_dir" 2>&1 | tee "$log_file" >&2; then
