@@ -56,6 +56,8 @@ it never enables testing/unstable or adds an external APT repository.
 ## MX/Debian dependency handling
 
 - Native APT package names replace the Arch dependency list.
+- Common dependencies include `libdw-dev`, required as `libdw-dev:native` by
+  the kernel's Debian packaging metadata, alongside `libelf-dev` and `libssl-dev`.
 - APT displays a simulated transaction first. Both simulation and installation
   use `--no-remove`; dependency installation uses `--no-install-recommends`.
 - GCC, binutils, LLVM, Rust and bindgen minimum versions are read from the actual

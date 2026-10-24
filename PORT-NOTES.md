@@ -2,6 +2,28 @@
 
 24 October 2026.
 
+## Debian package build dependency fix (r03)
+
+The first full build attempt on MX 25.3 passed source preparation and ThinkPad
+configuration validation, then stopped at `dpkg-checkbuilddeps` because
+`libdw-dev:native` was missing. The selected kernel's `scripts/package/mkdebian`
+declares this dependency unconditionally, alongside the existing `libelf-dev`
+and `libssl-dev` dependencies.
+
+Added the native `libdw-dev` package to the shared base dependency list used by
+both builders and `install-deps.sh`. It is now offered through the existing
+guarded APT transaction before source downloads or preparation. No dependency
+checks are bypassed and no profile or kernel configuration changes are needed.
+
+Regression coverage checks the real dependency resolver with only `libdw-dev`
+missing: it updates APT metadata, simulates and offers the exact package,
+respects a declined installation, and skips APT when dependencies are installed.
+The complete regression suite and ShellCheck passed. Also generated the actual
+RT-BORE 7.3.0-4 Debian control file and ran `dpkg-checkbuilddeps` against isolated
+installed-package status fixtures: omitting `libdw-dev` reproduces the reported
+error, and including it satisfies the generated build dependencies. This checks
+packaging metadata; a full kernel image/package build and boot test remain.
+
 ## Bindgen/libclang 22 fix (r02)
 
 The original generic minimum check accepted bindgen 0.71.1 together with

@@ -10,6 +10,30 @@ trap 'rm -rf -- "$scratch"' EXIT
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 expect_failure() { if ( "$@" ) >"$scratch/expected-failure.log" 2>&1; then fail "Unexpected success: $*"; fi; }
 
+# Kernel bindeb-pkg declares libdw-dev:native even when the other build tools
+# are already installed. Detect and offer it before fetching/preparing sources.
+(
+    dpkg-query() {
+        if [[ "${!#}" != libdw-dev ]]; then printf 'installed'; fi
+    }
+    mx_as_root() { printf '%s\n' "$*" >>"$scratch/base-dependency-apt-calls"; }
+    mx_ensure_base_dependencies <<< y >"$scratch/base-dependency-output" 2>&1
+    [[ -f "$scratch/base-dependency-apt-calls" ]] || fail 'Missing libdw-dev was not detected.'
+    grep -qx 'apt-get update' "$scratch/base-dependency-apt-calls" || fail 'APT metadata was not refreshed.'
+    grep -qx 'apt-get --simulate --no-remove --no-install-recommends install libdw-dev' \
+        "$scratch/base-dependency-apt-calls" || fail 'libdw-dev installation was not simulated.'
+    grep -qx 'apt-get --no-remove --no-install-recommends install libdw-dev' \
+        "$scratch/base-dependency-apt-calls" || fail 'libdw-dev was not offered for installation.'
+
+    mx_as_root() { touch "$scratch/declined-base-dependency-apt"; }
+    expect_failure mx_ensure_base_dependencies <<< n
+    [[ ! -e "$scratch/declined-base-dependency-apt" ]] || fail 'Declined dependencies reached APT.'
+
+    dpkg-query() { printf 'installed'; }
+    mx_ensure_base_dependencies </dev/null
+    [[ ! -e "$scratch/declined-base-dependency-apt" ]] || fail 'Installed dependencies reached APT.'
+)
+
 # Native metadata evaluation handles current upstream defaults and ignores
 # inherited overrides that would prune the universal hardware profile.
 mkdir "$scratch/recipe"
@@ -86,7 +110,7 @@ printf '# CONFIG_RUST is not set\n' >"$scratch/rust-baseline"
 
 # Private LLVM acquisition verifies the publisher digest before extraction.
 (
-    llvm_name=LLVM-22.1.8-Linux-X64
+    llvm_name='LLVM-22.1.8-Linux-X64'
     llvm_fixture="$scratch/llvm-fixture"
     mkdir -p "$llvm_fixture/$llvm_name/bin" "$llvm_fixture/$llvm_name/lib"
     printf '#!/bin/sh\necho "clang version 22.1.8"\n' >"$llvm_fixture/$llvm_name/bin/clang"
