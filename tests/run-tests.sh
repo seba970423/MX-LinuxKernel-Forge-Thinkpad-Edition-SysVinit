@@ -22,5 +22,6 @@ bash -n \
 bash "$SCRIPT_DIR/test-debug-compression.sh"
 bash "$SCRIPT_DIR/test-debian-port.sh"
 bash "$SCRIPT_DIR/test-bindgen-compatibility.sh"
+python3 "$SCRIPT_DIR/test-progress.py"
 
 printf 'All KernelForge ThinkPad MX/Debian Edition tests passed.\n'

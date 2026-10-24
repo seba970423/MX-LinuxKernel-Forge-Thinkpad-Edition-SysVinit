@@ -103,7 +103,7 @@ main() {
 
     # shellcheck source=/dev/null
     source "$checkout/$variant/.kernelforge-toolchain-env"
-    configure_and_validate_kernel "$tree" "$variant"
+    configure_and_validate_kernel "$tree" "$variant" "$checkout/$variant/.kernelforge-config.log"
 
     printf '\n'
     printf '==> CONFIGURATION VALIDATION PASSED.\n'

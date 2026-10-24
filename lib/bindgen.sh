@@ -91,7 +91,8 @@ mx_select_bindgen() {
         mx_isolated_rust "$rust_minimum" "$root/rust" || return 1
     fi
     printf '==> Building compatible bindgen-cli %s in %s/bindgen...\n' "$minimum" "$root" >&2
-    cargo install --locked --root "$root/bindgen" --version "$minimum" bindgen-cli >&2 || return 1
+    kernelforge_run_logged 'Building bindgen' "${KERNELFORGE_PREPARE_LOG:-$root/.kernelforge-toolchain.log}" \
+        cargo install --locked --root "$root/bindgen" --version "$minimum" bindgen-cli || return 1
     export PATH="$root/bindgen/bin:$PATH"
     hash -r
     if ! mx_version_at_least "$(mx_version bindgen --version || true)" "$minimum" ||

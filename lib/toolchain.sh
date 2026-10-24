@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Read requirements from the selected source, never from a fixed kernel version.
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
+
 # shellcheck source=lib/bindgen.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/bindgen.sh"
 
@@ -105,13 +107,15 @@ mx_isolated_llvm() {
     mkdir -p "$root" || return 1
     destination="$root/${name%.tar.xz}"
     [[ ! -e "$destination" ]] || { echo 'ERROR: Private LLVM destination already exists.' >&2; return 1; }
-    curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+    kernelforge_run_logged 'Downloading LLVM' "${KERNELFORGE_PREPARE_LOG:-$root/.kernelforge-toolchain.log}" \
+        curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
         "$url" -o "$root/$name.part" || return 1
     actual="$(sha256sum "$root/$name.part")" || return 1
     [[ "${actual%% *}" == "$checksum" ]] || { echo 'ERROR: Official LLVM archive checksum mismatch.' >&2; return 1; }
     mv "$root/$name.part" "$root/$name" || return 1
     staging="$(mktemp -d "$root/.llvm-extract.XXXXXX")" || return 1
-    tar --extract --file "$root/$name" --directory "$staging" --strip-components=1 \
+    kernelforge_run_logged 'Extracting LLVM' "${KERNELFORGE_PREPARE_LOG:-$root/.kernelforge-toolchain.log}" \
+        tar --extract --file "$root/$name" --directory "$staging" --strip-components=1 \
         --no-same-owner --no-same-permissions || return 1
     [[ -x "$staging/bin/clang" && -x "$staging/bin/ld.lld" && -x "$staging/bin/llvm-objcopy" ]] || {
         echo 'ERROR: Official LLVM archive has an unexpected layout.' >&2; return 1;
@@ -145,16 +149,19 @@ mx_isolated_rust() {
     mkdir -p "$root"
     export CARGO_HOME="$root/cargo" RUSTUP_HOME="$root/rustup"
     installer="$root/rustup-init"
-    curl --fail --location --proto '=https' --proto-redir '=https' \
+    kernelforge_run_logged 'Downloading Rust installer' "${KERNELFORGE_PREPARE_LOG:-$root/.kernelforge-toolchain.log}" \
+        curl --fail --location --proto '=https' --proto-redir '=https' \
         'https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init' -o "$installer" || return 1
-    checksum="$(curl --fail --location --proto '=https' --proto-redir '=https' \
+    checksum="$(curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
         'https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256')" || return 1
     checksum="${checksum%% *}"
     [[ "$checksum" =~ ^[[:xdigit:]]{64}$ ]] || return 1
     actual="$(sha256sum "$installer")"
     [[ "${actual%% *}" == "$checksum" ]] || { echo 'ERROR: Rust installer checksum mismatch.' >&2; return 1; }
     chmod 700 "$installer"
-    RUSTUP_INIT_SKIP_PATH_CHECK=yes "$installer" -y --no-modify-path --profile minimal \
+    RUSTUP_INIT_SKIP_PATH_CHECK=yes kernelforge_run_logged 'Installing private Rust toolchain' \
+        "${KERNELFORGE_PREPARE_LOG:-$root/.kernelforge-toolchain.log}" \
+        "$installer" -y --no-modify-path --profile minimal \
         --default-toolchain "$minimum" --component rust-src --component rustfmt >&2 || return 1
     export PATH="$CARGO_HOME/bin:$PATH" RUSTUP_TOOLCHAIN="$minimum"
     export RUST_LIB_SRC="$RUSTUP_HOME/toolchains/$minimum-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library"

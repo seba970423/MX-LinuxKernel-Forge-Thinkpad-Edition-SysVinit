@@ -2,6 +2,36 @@
 
 24 October 2026.
 
+## Readable terminal output and elapsed-time counter (r04)
+
+Restored the original builder's 30-second elapsed-time heartbeat. Full builds,
+upstream preparation, source downloads/extraction and private toolchain work
+now retain command output in logs and show short stage messages in the terminal.
+Detailed per-symbol policy checks are retained in `.kernelforge-config.log`.
+The elapsed display measures time spent in the current command.
+
+Interactive questions and APT transactions stay in the foreground. Only
+unattended commands use the shared reporter. Its foreground pipeline captures
+stdout/stderr verbatim, preserves command failures independently of the caller's
+pipefail setting, stops if logging fails, and has no detached timer. A failure
+shows its exit status, the last 40 log lines and the full log path.
+
+The full regression suite and ShellCheck passed. Nine progress tests exercise
+the default 30-second interval, elapsed-time formatting, silent/busy commands,
+binary-safe complete logs, nonzero commands, failed logging, invalid intervals,
+Ctrl+C cleanup, and a pseudo-terminal preparation prompt that remains visible
+before the user supplies an answer. A failing preparation test also checks that
+diagnostic excerpts remain bounded when the wrapper appends them to its log.
+Existing profile, dependency, toolchain and Debian artifact tests also pass.
+Profile files and executable modes are retained.
+
+A real 31-second unattended command produced the default `0m 30s elapsed`
+heartbeat. Re-ran configuration normalization, ThinkPad policy validation and
+DWARF/BTF checks on the prepared RT-BORE 7.3.0-4 source with the selected real
+toolchain. The detailed checks went to the configuration log and the terminal
+showed the short stage/policy summaries. No full kernel compilation was needed
+for this output change.
+
 ## Debian package build dependency fix (r03)
 
 The first full build attempt on MX 25.3 passed source preparation and ThinkPad

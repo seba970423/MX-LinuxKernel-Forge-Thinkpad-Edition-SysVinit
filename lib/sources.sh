@@ -2,6 +2,8 @@
 # Native source acquisition. The upstream recipe supplies metadata and patches;
 # Debian tools verify, extract and build it without makepkg or pacman.
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
+
 mx_recipe_metadata() {
     bash "$REPO_ROOT/lib/recipe.sh" metadata "$1"
 }
@@ -83,7 +85,8 @@ mx_acquire_sources() (
         case "$url" in
             https://*)
                 printf '==> Downloading %s\n' "$name" >&2
-                curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+                kernelforge_run_logged 'Source download' "${KERNELFORGE_PREPARE_LOG:-$package_dir/.kernelforge-prepare.log}" \
+                    curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
                     --output "$package_dir/$name.part" "$url"
                 mv -- "$package_dir/$name.part" "$package_dir/$name" ;;
             *)
@@ -94,7 +97,9 @@ mx_acquire_sources() (
     done
     mx_verify_checksums "$package_dir"
     ensure_upstream_pgp_keys "$package_dir"
-    mx_verify_signatures "$package_dir"
+    kernelforge_run_logged 'Verifying source signatures' \
+        "${KERNELFORGE_PREPARE_LOG:-$package_dir/.kernelforge-prepare.log}" mx_verify_signatures "$package_dir"
+    printf '==> Source signatures verified against the pinned signing keys.\n' >&2
     mkdir -- "$package_dir/src"
     for entry in "${source[@]}"; do
         name="$(mx_source_filename "$entry")"
@@ -102,7 +107,9 @@ mx_acquire_sources() (
         ln -s -- "$file" "$package_dir/src/$name"
         case "$name" in
             *.tar.gz|*.tar.xz|*.tar.zst|*.tar.bz2)
-                tar --extract --file "$file" --directory "$package_dir/src" --no-same-owner --no-same-permissions ;;
+                kernelforge_run_logged 'Extracting kernel source' \
+                    "${KERNELFORGE_PREPARE_LOG:-$package_dir/.kernelforge-prepare.log}" \
+                    tar --extract --file "$file" --directory "$package_dir/src" --no-same-owner --no-same-permissions ;;
             *.patch.zst) zstd -dc -- "$file" >"$package_dir/src/${name%.zst}" ;;
         esac
     done

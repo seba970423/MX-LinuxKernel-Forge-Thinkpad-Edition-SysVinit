@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
+
 compile_selected_kernel() {
     local checkout="$1" variant="$2" tree="$3"
     local package_dir="$checkout/$variant" log_file="$checkout/$variant/.kernelforge-build.log"
@@ -16,14 +18,15 @@ compile_selected_kernel() {
     cp "$tree/.config" "$package_dir/.kernelforge-validated.config"
     printf '==> Building Debian packages with %s jobs.\n' "$jobs"
     printf '==> Kernel release: %s\n==> Build log: %s\n' "$release" "$log_file"
+    printf '==> Elapsed-time updates every %s seconds; compiler output is saved in the log.\n' \
+        "${KERNELFORGE_PROGRESS_INTERVAL:-30}"
     # Use the final, validated tree directly. No source extraction, upstream
     # prepare(), or clean target runs again here.
-    if ! make -C "$tree" -j"$jobs" bindeb-pkg \
+    : >"$log_file"
+    if ! kernelforge_run_logged Build "$log_file" make -C "$tree" -j"$jobs" bindeb-pkg \
         KDEB_PKGVERSION="$KF_PACKAGE_VERSION+mx1" \
-        KDEB_SOURCENAME=kernelforge-thinkpad \
-        2>&1 | tee "$log_file"; then
-        printf 'ERROR: Debian kernel build failed. Last 100 log lines:\n' >&2
-        tail -100 "$log_file" >&2
+        KDEB_SOURCENAME=kernelforge-thinkpad; then
+        printf 'ERROR: Debian kernel build did not complete. Log: %s\n' "$log_file" >&2
         return 1
     fi
     after="$(sha256sum "$tree/.config")"
