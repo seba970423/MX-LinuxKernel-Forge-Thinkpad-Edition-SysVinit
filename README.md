@@ -31,6 +31,18 @@ It requests sudo only for dependencies and optional kernel installation. You
 select the kernel flavor, optional name and existing profile choices; compilation
 and installation are separate opt-in steps. Rebooting is manual.
 
+Long steps show a short stage name and an elapsed-time update every 30 seconds:
+
+```text
+==> Build still running... 0m 30s elapsed
+==> Build still running... 1m 00s elapsed
+```
+
+Compiler, Cargo and upstream Kconfig output goes to the displayed log files.
+Questions, APT transaction plans and completion summaries stay visible. On a
+failure, the terminal shows the exit status, a short diagnostic excerpt and the
+full log path. Ctrl+C interrupts the command and its status reporter.
+
 Prepare sources and validate the configuration without compiling a kernel:
 
 ```bash
@@ -98,6 +110,9 @@ To reduce compile parallelism, set `KERNELFORGE_JOBS`, for example:
 KERNELFORGE_JOBS=4 ./builder.sh
 ```
 
+Elapsed-time updates default to 30 seconds. To choose another interval, set
+`KERNELFORGE_PROGRESS_INTERVAL` to a positive number of seconds.
+
 ## Sources and kernel flavors
 
 The kernel sources, patches, flavor definitions and baseline configs still come
@@ -151,12 +166,17 @@ Builds live under `/var/tmp/kernelforge-mx-build.*`; compiler temporary files
 also live there. Each selected flavor keeps:
 
 - `.kernelforge-prepare.log`: source verification and preparation output;
-- `.kernelforge-build.log`: streamed compiler/package output;
+- `.kernelforge-config.log`: dependency resolution and detailed profile checks;
+- `.kernelforge-build.log`: complete compiler/package output;
 - `.kernelforge-toolchain-env`: the exact selected tool environment;
 - `.kernelforge-validated.config`: the configuration sent to compilation;
 - `.kernelforge-built-packages`: the exact image/headers install manifest;
 - `.kernelforge-package-checksums`: hashes checked before installation;
 - `packages/`: generated Debian artifacts, outside disposable source directories.
+
+The upstream recipe checkout also keeps `upstream.fetch.log` in the work
+directory. To view a log live from another terminal, use `tail -f` with its
+displayed path.
 
 The small bindgen compatibility header, generated bindings and diagnostics are
 retained under `toolchain/bindgen-probe/` for troubleshooting.
@@ -177,6 +197,8 @@ configuration-validation and cleanup coverage. MX/Debian tests additionally
 exercise native recipe evaluation, source checksum failures, pinned-signature
 selection, toolchain feature loss, genuine tiny `.deb` artifacts, exact package
 selection, tamper rejection and APT transaction guards.
+Progress tests cover silent/busy commands, complete output capture, command and
+logger failures, interruption, and a real terminal prompt during preparation.
 
 See `PORT-NOTES.md` for the tested revision and actual smoke-test limits. A
 passing test suite does not substitute for compiling and boot-testing the new

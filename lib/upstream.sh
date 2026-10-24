@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
+
 UPSTREAM_URL="https://github.com/CachyOS/linux-cachyos.git"
 UPSTREAM_BRANCH="master"
 
@@ -192,7 +194,7 @@ fetch_upstream() {
 
     info "Fetching latest CachyOS kernel sources..."
 
-    git clone \
+    kernelforge_run_logged 'Downloading kernel recipes' "$destination.fetch.log" git clone \
         --branch "$UPSTREAM_BRANCH" \
         --single-branch \
         "$UPSTREAM_URL" \
