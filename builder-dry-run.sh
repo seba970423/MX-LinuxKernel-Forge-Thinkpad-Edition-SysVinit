@@ -31,7 +31,7 @@ main() {
     require_build_commands
 
     printf '==> KernelForge ThinkPad MX/Debian Edition dry-run\n'
-    printf '==> This run will NOT compile or install a kernel.\n\n'
+    printf '==> This run will NOT build or install kernel packages.\n\n'
 
     load_profile "$REPO_ROOT"
     validate_profile
@@ -83,7 +83,7 @@ main() {
     printf '==> DRY-RUN PASSED.\n'
     printf '==> Kernel variant: %s\n' "$variant"
     printf '==> Kernel release suffix: %s\n' "$custom_name"
-    printf '==> No kernel was compiled or installed.\n'
+    printf '==> No kernel packages were built or installed.\n'
     printf '==> Prepared work tree kept for inspection: %s\n' "$workdir"
 }
 

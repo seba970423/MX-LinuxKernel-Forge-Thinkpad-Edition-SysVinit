@@ -88,7 +88,7 @@ install_built_kernel() {
     # DKMS hooks must see the compiler used for the kernel even when sudo's
     # secure_path would hide a private LLVM/Rust toolchain.
     local variable
-    for variable in LIBCLANG_PATH RUST_LIB_SRC CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN LLVM LLVM_IAS; do
+    for variable in BINDGEN LIBCLANG_PATH RUST_LIB_SRC CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN LLVM LLVM_IAS; do
         if [[ -v "$variable" ]]; then install_environment+=("$variable=${!variable}"); fi
     done
     mx_as_root /usr/bin/env "${install_environment[@]}" apt-get --no-remove --reinstall install "${packages[@]}" || return 1

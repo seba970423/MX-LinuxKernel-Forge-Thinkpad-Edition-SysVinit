@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Read requirements from the selected source, never from a fixed kernel version.
 
+# shellcheck source=lib/bindgen.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/bindgen.sh"
+
 mx_version() {
     "$@" 2>/dev/null | sed -n '1p' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | sed -n '1p'
 }
@@ -174,7 +177,7 @@ mx_required_rust_version() {
 }
 
 mx_select_rust() {
-    local tree="$1" root="$2" reference_config="$3" minimum current library candidate bindgen_min
+    local tree="$1" root="$2" reference_config="$3" minimum current library candidate
     minimum="$(mx_required_rust_version "$tree" "$reference_config")" || return 1
     current="$(mx_version rustc --version || true)"
     library="$(mx_rust_library || true)"
@@ -192,21 +195,7 @@ mx_select_rust() {
         fi
     fi
     export RUST_LIB_SRC="$library"
-    bindgen_min="$(mx_min_tool_version "$tree" bindgen)" || return 1
-    current="$(mx_version bindgen --version || true)"
-    if ! mx_version_at_least "$current" "$bindgen_min"; then
-        candidate="$(mx_apt_candidate bindgen)"
-        if [[ -n "$candidate" ]] && dpkg --compare-versions "$candidate" ge "$bindgen_min"; then
-            mx_apt_install bindgen || return 1
-        else
-            command -v cargo >/dev/null || mx_isolated_rust "$minimum" "$root/rust" || return 1
-            printf '==> Building bindgen-cli %s in the private toolchain directory...\n' "$bindgen_min" >&2
-            cargo install --locked --root "$root/bindgen" --version "$bindgen_min" bindgen-cli >&2 || return 1
-            export PATH="$root/bindgen/bin:$PATH"
-        fi
-    fi
     mx_version_at_least "$(mx_version rustc --version)" "$minimum" || return 1
-    mx_version_at_least "$(mx_version bindgen --version)" "$bindgen_min" || return 1
 }
 
 mx_prepare_toolchain() {
@@ -248,6 +237,9 @@ mx_prepare_toolchain() {
             [[ "$rust_llvm" =~ ^[0-9]+$ ]] || return 1
             mx_select_llvm "$rust_llvm.0.0" "$rust_llvm" "$package_dir/toolchain" || return 1
         fi
+        # Rust LTO can change the LLVM suite. Probe bindgen only after that final
+        # selection so both prepare() and all subsequent makes use a tested pair.
+        mx_select_bindgen "$tree" "$package_dir/toolchain" "$package_dir/config" || return 1
     fi
     if [[ "$KF_LTO" != none ]]; then export LLVM=1 LLVM_IAS=1; else unset LLVM LLVM_IAS; fi
     export KBUILD_BUILD_HOST=mx-debian
@@ -258,7 +250,7 @@ mx_prepare_toolchain() {
         printf 'export LIBCLANG_PATH=%q\n' "${LIBCLANG_PATH:-}"
         printf 'export RUST_LIB_SRC=%q\n' "${RUST_LIB_SRC:-}"
         printf 'export KBUILD_BUILD_HOST=mx-debian\n'
-        for current in CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN KERNELFORGE_LLVM_ROOT LLVM LLVM_IAS; do
+        for current in BINDGEN CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN KERNELFORGE_LLVM_ROOT LLVM LLVM_IAS; do
             if [[ -v "$current" ]]; then printf 'export %s=%q\n' "$current" "${!current}"; else printf 'unset %s\n' "$current"; fi
         done
     } >"$package_dir/.kernelforge-toolchain-env"

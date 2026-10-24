@@ -7,6 +7,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 bash -n \
     "$REPO_ROOT/builder.sh" \
     "$REPO_ROOT/builder-dry-run.sh" \
+    "$REPO_ROOT/install-deps.sh" \
     "$REPO_ROOT"/lib/*.sh \
     "$SCRIPT_DIR"/*.sh
 
@@ -20,5 +21,6 @@ bash -n \
 "$SCRIPT_DIR/test-postinstall-cleanup.sh"
 bash "$SCRIPT_DIR/test-debug-compression.sh"
 bash "$SCRIPT_DIR/test-debian-port.sh"
+bash "$SCRIPT_DIR/test-bindgen-compatibility.sh"
 
 printf 'All KernelForge ThinkPad MX/Debian Edition tests passed.\n'

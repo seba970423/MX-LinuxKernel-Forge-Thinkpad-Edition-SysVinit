@@ -56,7 +56,7 @@ main() {
     require_build_commands
 
     printf '==> KernelForge ThinkPad MX/Debian Edition\n'
-    printf '==> Configuration is prepared and validated before any compilation starts.\n\n'
+    printf '==> Configuration is prepared and validated before the main kernel package build.\n\n'
 
     load_profile "$REPO_ROOT"
     validate_profile
