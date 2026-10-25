@@ -20,6 +20,7 @@ bash -n \
 "$SCRIPT_DIR/test-optional-tuning.sh"
 "$SCRIPT_DIR/test-postinstall-cleanup.sh"
 bash "$SCRIPT_DIR/test-debug-compression.sh"
+bash "$SCRIPT_DIR/test-apt-discovery.sh"
 bash "$SCRIPT_DIR/test-debian-port.sh"
 bash "$SCRIPT_DIR/test-debian-source.sh"
 python3 "$SCRIPT_DIR/test-progress.py"

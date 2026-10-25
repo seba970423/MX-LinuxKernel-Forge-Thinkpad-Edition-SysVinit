@@ -29,7 +29,23 @@ mx_as_root() {
 }
 
 mx_apt_candidate() {
-    apt-cache policy "$1" | awk '/Candidate:/ && $2 != "(none)" {print $2; exit}'
+    local package="$1" candidate_version
+    # Consume the complete policy output. Exiting awk after the candidate can
+    # SIGPIPE apt-cache and abort the caller under set -euo pipefail.
+    candidate_version="$(LC_ALL=C apt-cache policy "$package" | awk '
+        $1 == "Candidate:" && !seen {
+            seen = 1
+            if ($2 != "(none)") print $2
+        }
+    ')" || {
+        printf 'ERROR: Could not read the APT candidate for %s. Check the APT error above and retry.\n' "$package" >&2
+        return 1
+    }
+    [[ -n "$candidate_version" ]] || {
+        printf 'ERROR: No APT candidate for %s in the enabled repositories. Check repository configuration and retry.\n' "$package" >&2
+        return 1
+    }
+    printf '%s\n' "$candidate_version"
 }
 
 mx_apt_install() {
