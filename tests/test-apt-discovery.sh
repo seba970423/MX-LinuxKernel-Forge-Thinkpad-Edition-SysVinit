@@ -92,8 +92,11 @@ print_hardware_summary() { :; }
 mx_as_root() { "$@"; }
 mx_debian_kernel_series() { printf '6.12\n'; }
 mktemp() { mkdir -p "$KF_APT_FIXTURE_DIR/work"; printf '%s/work\n' "$KF_APT_FIXTURE_DIR"; }
-prompt_kernel_name() { printf 'mx-thinkpad-debian\n'; }
-prepare_debian_source() { printf 'SOURCE_PREPARATION_REACHED\n' >&2; return 73; }
+prepare_debian_source() {
+    printf 'SOURCE_PREPARATION_REACHED\n' >&2
+    printf 'FLAVOUR_SELECTION %s %s %s\n' "$KF_PREEMPT_RT" "$KF_BORE" "$2" >&2
+    return 73
+}
 main
 SCRIPT
 for entry in builder.sh builder-dry-run.sh; do
@@ -104,6 +107,16 @@ for entry in builder.sh builder-dry-run.sh; do
     grep -q 'Reading package lists... Done' "$scratch/workflow-output" || fail 'Refresh was not exercised.'
     grep -q 'Debian kernel source: linux-source-6.12=6.12.107-1' "$scratch/workflow-output" || fail 'Source selection was not reached.'
     grep -qx 'SOURCE_PREPARATION_REACHED' "$scratch/workflow-output" || fail 'Source-preparation boundary was not reached.'
+
+    for combination in no:no yes:no no:yes yes:yes; do
+        first="${combination%:*}" second="${combination#*:}"
+        case "$combination" in no:no) suffix='';; yes:no) suffix=-rt;; no:yes) suffix=-bore;; yes:yes) suffix=-rt-bore;; esac
+        if bash "$scratch/workflow.sh" "$REPO_ROOT/$entry" <<< "$first"$'\n'"$second"$'\nn' >"$scratch/workflow-output" 2>&1; then
+            fail 'Workflow passed the fixture source-preparation boundary.'
+        else status=$?; fi
+        [[ "$status" == 73 ]] || { cat "$scratch/workflow-output" >&2; fail "$entry did not reach source preparation for $combination."; }
+        grep -qx "FLAVOUR_SELECTION $first $second mx-thinkpad-debian$suffix" "$scratch/workflow-output" || fail 'Prompt selections or flavour name were lost.'
+    done
 
     for mode in none partial-error; do
         if KF_TEST_POLICY_MODE="$mode" bash "$scratch/workflow.sh" "$REPO_ROOT/$entry" >"$scratch/workflow-output" 2>&1; then

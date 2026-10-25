@@ -64,6 +64,7 @@ main() {
     printf '\n'
 
     mx_resolve_debian_kernel
+    mx_choose_kernel_flavour
     printf '\n'
 
     local workdir

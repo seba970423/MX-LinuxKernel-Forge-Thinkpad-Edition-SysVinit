@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mx_default_kernel_name() { printf 'mx-thinkpad-debian\n'; }
+mx_default_kernel_name() { printf 'mx-thinkpad-debian%s\n' "${KF_FLAVOUR_SUFFIX:-}"; }
 
 mx_valid_kernel_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9.+-]{0,47}$ ]]; }
 

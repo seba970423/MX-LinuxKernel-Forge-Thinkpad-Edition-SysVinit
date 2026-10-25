@@ -4,6 +4,7 @@
 # deb-src entries and a third-party kernel recipe are not needed.
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/flavours.sh"
 
 mx_debian_kernel_series() {
     local version
@@ -42,7 +43,7 @@ mx_resolve_debian_kernel() {
     KF_DEBIAN_CONFIG_SHA256="$(mx_apt_package_digest "$KF_DEBIAN_CONFIG" "$KF_DEBIAN_VERSION")" || return 1
     KF_VARIANT="linux-debian-$KF_DEBIAN_SERIES"
     printf '==> Debian kernel source: %s=%s\n' "$KF_DEBIAN_SOURCE" "$KF_DEBIAN_VERSION"
-    printf '==> Matching baseline: %s, standard amd64 configuration.\n' "$KF_DEBIAN_CONFIG"
+    printf '==> Matching configuration package: %s.\n' "$KF_DEBIAN_CONFIG"
 }
 
 mx_download_debian_packages() (
@@ -81,7 +82,8 @@ prepare_debian_source() {
     local package_dir="$1" custom_name="$2"
     local log_file="$package_dir/.kernelforge-prepare.log"
     local unpack="$package_dir/src/debian-packages" tree="$package_dir/src/linux-source-$KF_DEBIAN_SERIES"
-    local source_deb config_deb archive config
+    local source_deb config_deb archive config config_name standard_config
+    mx_validate_flavour_selection || return 1
     mkdir -p -- "$package_dir/downloads" "$unpack" || return 1
     : >"$log_file"
     printf '==> Preparing Debian %s sources (no kernel package build)...\n' "$KF_DEBIAN_VERSION" >&2
@@ -93,25 +95,41 @@ prepare_debian_source() {
     kernelforge_run_logged 'Unpacking Debian source package' "$log_file" dpkg-deb --extract "$source_deb" "$unpack" || return 1
     kernelforge_run_logged 'Unpacking Debian configuration package' "$log_file" dpkg-deb --extract "$config_deb" "$unpack" || return 1
     archive="$unpack/usr/src/linux-source-$KF_DEBIAN_SERIES.tar.xz"
-    config="$unpack/usr/src/linux-config-$KF_DEBIAN_SERIES/config.amd64_none_amd64.xz"
-    [[ -f "$archive" && -f "$config" && ! -e "$tree" ]] || {
+    config_name="$(mx_debian_config_filename)"
+    config="$unpack/usr/src/linux-config-$KF_DEBIAN_SERIES/$config_name"
+    standard_config="$unpack/usr/src/linux-config-$KF_DEBIAN_SERIES/config.amd64_none_amd64.xz"
+    [[ -f "$archive" && -f "$config" && -f "$standard_config" && ! -e "$tree" ]] || {
         echo 'ERROR: Unexpected Debian source/config package layout or existing source tree.' >&2
         return 1
     }
     kernelforge_run_logged 'Extracting Debian kernel' "$log_file" tar --extract --file "$archive" \
         --directory "$package_dir/src" --no-same-owner --no-same-permissions || return 1
     xz --decompress --stdout -- "$config" >"$package_dir/config" || return 1
-    grep -qx 'CONFIG_X86_64=y' "$package_dir/config" &&
-        ! grep -qx 'CONFIG_PREEMPT_RT=y' "$package_dir/config" || {
-            echo 'ERROR: Expected Debian standard non-RT amd64 configuration.' >&2; return 1;
+    xz --decompress --stdout -- "$standard_config" >"$package_dir/config.standard" || return 1
+    grep -qx 'CONFIG_X86_64=y' "$package_dir/config" || {
+        echo 'ERROR: Expected Debian amd64 configuration.' >&2; return 1;
+    }
+    if [[ "${KF_PREEMPT_RT:-no}" == yes ]]; then
+        grep -qx 'CONFIG_PREEMPT_RT=y' "$package_dir/config" || {
+            echo 'ERROR: Matching Debian RT configuration is missing PREEMPT_RT.' >&2; return 1;
         }
+        kernelforge_run_logged 'Checking Debian RT graphics and input configuration' "$log_file" \
+            mx_validate_debian_hardware "$package_dir/config.standard" "$package_dir/config" || return 1
+    elif grep -qx 'CONFIG_PREEMPT_RT=y' "$package_dir/config"; then
+        echo 'ERROR: Expected Debian standard non-RT configuration.' >&2; return 1
+    fi
     [[ -x "$tree/scripts/config" && -f "$tree/Makefile" ]] || return 1
+    mx_prepare_flavour_sources "$package_dir" "$tree" "$log_file" >&2 || {
+        printf 'ERROR: Selected patches do not match Debian %s; source preparation stopped. See %s.\n' "$KF_DEBIAN_VERSION" "$log_file" >&2
+        return 1
+    }
     cp -- "$package_dir/config" "$tree/.config" || return 1
+    mx_configure_flavour "$tree" >&2 || return 1
     printf '%s\n' "$KF_DEBIAN_VERSION" >"$package_dir/.kernelforge-source-version"
     {
         printf 'source=%s\nconfig=%s\nversion=%s\n' "$KF_DEBIAN_SOURCE" "$KF_DEBIAN_CONFIG" "$KF_DEBIAN_VERSION"
         printf 'source_sha256=%s\nconfig_sha256=%s\n' "$KF_DEBIAN_SOURCE_SHA256" "$KF_DEBIAN_CONFIG_SHA256"
-        printf 'configuration=config.amd64_none_amd64.xz\n'
+        cat -- "$package_dir/.kernelforge-flavour"
     } >"$package_dir/.kernelforge-source-info"
     apply_custom_kernel_name "$tree" "$custom_name" >&2 || return 1
     # Debian's archive signing keys are not shipped in linux-source. Keep

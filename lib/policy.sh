@@ -128,6 +128,8 @@ resolve_policy() {
 
 print_policy_summary() {
     info "Resolved kernel policy:"
+    printf '    PREEMPT_RT:          %s\n' "${KF_PREEMPT_RT:-no}"
+    printf '    BORE scheduler:      %s\n' "${KF_BORE:-no}"
     printf '    Standard KVM:        %s\n' "$KEEP_KVM"
     printf '    Intel TDX:           %s\n' "$KEEP_INTEL_TDX"
     printf '    AMD SEV:             %s\n' "$KEEP_AMD_SEV"

@@ -11,7 +11,8 @@ removing anything. It removes only `src/`, `pkg/` if present, and the workspace'
 `tmp/` directory.
 
 It retains the Debian source/config downloads, generated kernel packages,
-build logs, source provenance and version, compiler environment, manifests,
+selected patch inputs and flavour metadata, standard and selected-flavour
+configurations, build logs, source provenance and version, compiler environment, manifests,
 checksums and saved configurations. A refusal or cleanup failure leaves the
 successful kernel installation intact.
 

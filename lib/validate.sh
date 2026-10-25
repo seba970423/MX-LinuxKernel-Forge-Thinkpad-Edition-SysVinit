@@ -123,6 +123,21 @@ validate_profile_invariants() {
     for symbol in "${REQUIRE_DISABLED[@]}"; do
         validate_disabled "$config" "$symbol" || return 1
     done
+    validate_flavour_features "$config"
+}
+
+validate_flavour_features() {
+    local config="$1"
+    case "${KF_PREEMPT_RT:-no}" in
+        yes) validate_enabled_bool "$config" PREEMPT_RT || return 1 ;;
+        no) validate_disabled "$config" PREEMPT_RT || return 1 ;;
+        *) validation_error 'Invalid PREEMPT_RT selection.'; return 1 ;;
+    esac
+    case "${KF_BORE:-no}" in
+        yes) validate_enabled_bool "$config" SCHED_BORE || return 1 ;;
+        no) validate_disabled "$config" SCHED_BORE || return 1 ;;
+        *) validation_error 'Invalid BORE selection.'; return 1 ;;
+    esac
 }
 
 # Compare complete symbol lines, including numeric values and choice members.
@@ -289,10 +304,15 @@ validate_kernel_policy() {
 # normalization, so a changed toolchain cannot silently redefine the baseline.
 mx_validate_debian_config() {
     local baseline="$1" config="$2"
-    validate_disabled "$config" PREEMPT_RT || return 1
+    validate_flavour_features "$config" || return 1
     validate_config_group_preserved "$baseline" "$config" \
         '^(CONFIG_PREEMPT[A-Z0-9_]*=.*|# CONFIG_PREEMPT[A-Z0-9_]* is not set)$' \
         'Debian preemption settings' || return 1
+    mx_validate_debian_hardware "$baseline" "$config"
+}
+
+mx_validate_debian_hardware() {
+    local baseline="$1" config="$2"
     validate_config_group_preserved "$baseline" "$config" \
         '^(CONFIG_(MOUSE_PS2[A-Z0-9_]*|RMI4[A-Z0-9_]*|HID_RMI|I2C_HID[A-Z0-9_]*)=.*|# CONFIG_(MOUSE_PS2[A-Z0-9_]*|RMI4[A-Z0-9_]*|HID_RMI|I2C_HID[A-Z0-9_]*) is not set)$' \
         'Debian touchpad and TrackPoint transport settings' || return 1

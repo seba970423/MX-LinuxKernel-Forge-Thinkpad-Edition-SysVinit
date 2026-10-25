@@ -44,7 +44,7 @@ mx_prepare_toolchain() {
         }
     fi
     if grep -qx 'CONFIG_RUST=y' "$package_dir/config"; then
-        echo 'ERROR: This builder expects the supported Debian standard GCC configuration with Rust disabled.' >&2
+        echo 'ERROR: This builder expects a supported Debian GCC configuration with Rust disabled.' >&2
         return 1
     fi
     {
