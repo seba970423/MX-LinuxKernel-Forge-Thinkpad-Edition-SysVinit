@@ -5,10 +5,26 @@ Build a custom **Debian kernel** for **64-bit MX Linux and Debian**, including
 `linux-source` and `linux-config` packages. Packages integrate with
 **initramfs-tools, DKMS and GRUB**.
 
-This edition now follows Debian's standard kernel. The previous CachyOS
-source provider, RT/BORE flavours, patches and private LLVM/Rust downloads have
-been removed. The change follows desktop/input instability reported with the
-previous build and successful use of the stock Debian 6.12.107 kernel.
+This edition uses Debian's kernel foundation. On Debian 13 / MX 25, two
+independent questions let you choose PREEMPT_RT and the BORE scheduler patch.
+Both default to **no**, keeping the standard Debian flavour. The CachyOS source
+provider, recipes and private LLVM/Rust downloads are not used.
+
+```text
+Enable PREEMPT_RT real-time preemption? [y/N]:
+Apply the BORE scheduler patch? [y/N]:
+```
+
+| PREEMPT_RT | BORE | Default kernel suffix |
+| --- | --- | --- |
+| No | No | `mx-thinkpad-debian` |
+| Yes | No | `mx-thinkpad-debian-rt` |
+| No | Yes | `mx-thinkpad-debian-bore` |
+| Yes | Yes | `mx-thinkpad-debian-rt-bore` |
+
+The questions run before source preparation and naming in both launchers.
+Custom names are still supported. RT targets real-time preemption; BORE adjusts
+the fair scheduler for interactive responsiveness. Selecting either is optional.
 
 ## Run
 
@@ -49,10 +65,22 @@ Common dependencies can also be installed using `./install-deps.sh`.
   values and package names, versions and architectures before extracting.
 - Source/config packages stay inside the build workspace. No `deb-src` entry,
   new repository, system source-package installation or kernel recipe is needed.
-- The starting configuration is **`config.amd64_none_amd64.xz`**: Debian's
-  standard amd64 flavour, with generic CPU settings and non-RT preemption.
-  Cloud and RT configurations are not selected. The currently running kernel's
-  configuration is never used as a source.
+- The standard starting configuration is **`config.amd64_none_amd64.xz`**.
+  Selecting RT uses **`config.amd64_rt_amd64.xz`** from the same-version Debian
+  package and applies Debian's complete matching RT patch series, including
+  its i915 support changes. Graphics and input settings are checked against
+  the standard configuration before using the RT baseline. Cloud and
+  currently running kernel configurations are never used.
+- Optional RT/BORE support is currently provided for **Debian 6.12**. Debian 12
+  retains its standard 6.1 build. RT series are pinned for source versions
+  **6.12.107-1, 6.12.111-1 and 6.12.113-1**; a new source version needs a
+  reviewed mapping before RT can be selected. Unknown RT versions stop
+  explicitly rather than falling back to a different source or flavour.
+- The optional **BORE 7.0.0** patch and Debian RT series are bundled in this
+  repository, checked with pinned SHA256 values, and applied without fuzzy
+  matching or interactive guesses. A patch failure stops preparation before
+  compilation. No third-party patch download is required. Provenance and
+  licensing are recorded in [patches/README.md](patches/README.md).
 - The builder uses distribution **GCC and binutils**, checks source tool
   requirements, and checks pahole for BTF. Inherited LLVM/native-build overrides
   are cleared. No private compiler, Rust, Cargo or bindgen download is offered.
@@ -76,10 +104,12 @@ Debian baseline for optional tuning; `upstream` in the frequency prompt means
 the selected Debian kernel's default.
 
 CachyOS-only `CONFIG_X86_NATIVE_CPU` tuning is replaced by Debian's CPU target.
-The original and resolved configuration are compared to ensure that **Debian
-preemption, i915 graphics and touchpad/TrackPoint transport settings** survive
-unchanged. RT preemption is rejected. Toolchain normalization cannot silently
-drop BTF or other checked baseline features.
+The original selected-flavour and resolved configurations are compared to ensure
+that **Debian preemption, i915 graphics and touchpad/TrackPoint transport settings**
+survive unchanged. Validation also checks that selected RT/BORE features remain
+enabled and declined features stay disabled. RT builds do not offer THP tuning;
+other tuning choices still follow their actual Kconfig support. Toolchain
+normalization cannot silently drop BTF or other checked baseline features.
 
 The default release suffix is **`mx-thinkpad-debian`**. You can choose another
 Debian-compatible name. The result is a distinct kernel release, for example
@@ -130,6 +160,8 @@ Workspaces are under `/var/tmp/kernelforge-mx-build.*`. Each build keeps:
 
 - `downloads/`: original authenticated Debian source/config `.deb` packages;
 - `config` and `.kernelforge-source-info`: original configuration and provenance;
+- `config.standard`: the original standard Debian configuration;
+- `.kernelforge-flavour`: selections, baseline and applied patch identities;
 - `.kernelforge-source-version`: the exact Debian source version;
 - `.kernelforge-toolchain-env`: distribution compiler environment;
 - `.kernelforge-prepare.log`, `.kernelforge-config.log`, `.kernelforge-build.log`;
@@ -148,7 +180,8 @@ remain. See [POST-INSTALL-CLEANUP.md](POST-INSTALL-CLEANUP.md).
 bash tests/run-tests.sh
 ```
 
-Tests cover hardware/profile protection, supported prompts, tuning, source and
+Tests cover independent RT/BORE questions and names, patch integrity and strict
+application, hardware/profile protection, supported prompts, tuning, source and
 configuration version/hash failures, real tiny Debian packages, exact install
 selection, APT guards, cleanup and terminal progress/cancellation.
 See [PORT-NOTES.md](PORT-NOTES.md) for real-source validation and test limits.

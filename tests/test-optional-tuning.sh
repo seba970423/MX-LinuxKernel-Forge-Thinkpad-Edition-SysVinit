@@ -201,6 +201,7 @@ for entry in builder.sh builder-dry-run.sh; do
         detect_hardware() { CPU_VENDOR=intel; }
         print_hardware_summary() { :; }
         mx_resolve_debian_kernel() { KF_VARIANT=linux-debian-6.12; printf 'TEST: kernel selected\n'; }
+        mx_choose_kernel_flavour() { KF_PREEMPT_RT=no; KF_BORE=no; KF_FLAVOUR_SUFFIX=''; }
         prompt_kernel_name() { printf 'mx-thinkpad-debian\n'; }
         prepare_debian_source() {
             mkdir -p "$1"

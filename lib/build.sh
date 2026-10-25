@@ -16,7 +16,7 @@ require_command() {
 
 require_build_commands() {
     local cmd
-    for cmd in make find cp mktemp awk mv sort basename tail grep mkdir tar xz dpkg dpkg-deb dpkg-query apt-cache apt-get sha256sum python3 realpath findmnt; do
+    for cmd in make find cp mktemp awk mv sort basename tail grep mkdir tar xz patch dpkg dpkg-deb dpkg-query apt-cache apt-get sha256sum python3 realpath findmnt; do
         require_command "$cmd" || return 1
     done
 }
@@ -34,7 +34,7 @@ configure_and_validate_kernel() {
     kernelforge_run_logged 'Preparing baseline configuration' "$log_file" make -C "$tree" olddefconfig || return 1
     cp "$tree/.config" "$baseline"
     mx_validate_toolchain_features "$distribution_config" "$tree/.config" || return 1
-    kernelforge_run_logged 'Checking Debian graphics, input and preemption defaults' "$log_file" \
+    kernelforge_run_logged 'Checking selected Debian flavour and hardware defaults' "$log_file" \
         mx_validate_debian_config "$distribution_config" "$tree/.config" || return 1
 
     resolve_kernel_tuning_policy "$tree" "$variant"
@@ -57,6 +57,6 @@ configure_and_validate_kernel() {
     printf '==> ThinkPad hardware and feature checks passed.\n'
     kernelforge_validate_dwarf_zstd "$baseline" "$tree/.config" || return 1
     mx_validate_toolchain_features "$distribution_config" "$tree/.config" || return 1
-    kernelforge_run_logged 'Checking Debian graphics, input and preemption defaults' "$log_file" \
+    kernelforge_run_logged 'Checking selected Debian flavour and hardware defaults' "$log_file" \
         mx_validate_debian_config "$distribution_config" "$tree/.config" || return 1
 }
