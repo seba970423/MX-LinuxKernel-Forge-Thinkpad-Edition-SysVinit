@@ -39,7 +39,7 @@ validate_profile() {
     [[ -n "${PROFILE_VERSION:-}" ]] ||
         die "PROFILE_VERSION must not be empty."
 
-    [[ "${PROCESSOR_OPT:-}" == "native" ]] ||
+    [[ "${PROCESSOR_OPT:-}" == "debian" ]] ||
         die "Unsupported PROCESSOR_OPT: ${PROCESSOR_OPT:-unset}"
 
     case "${TICKRATE:-}" in

@@ -90,20 +90,20 @@ check_preserved() {
 
 for answers in $'upstream\nn\nn' $'\n\n\n' ''; do
     reset_config
-    resolve_kernel_tuning_policy "$TREE" linux-cachyos-bore <<< "$answers" > "$OUTPUT"
+    resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< "$answers" > "$OUTPUT"
     [[ "$AUTOGROUP_SUPPORTED" == yes && "$THP_SUPPORTED" == yes ]] || fail 'Supported prompts missing.'
     [[ "$ENABLE_AUTOGROUP" == no && "$ENABLE_THP_MADVISE" == no ]] || fail 'Default enabled tuning.'
     kconfig_apply_optional_tuning "$TREE"
     check_preserved
 done
-resolve_kernel_tuning_policy "$TREE" linux-cachyos < /dev/null > "$OUTPUT"
+resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 < /dev/null > "$OUTPUT"
 kconfig_apply_optional_tuning "$TREE"
 check_preserved
 
 # Enabled baselines are preserved as well; no does not mean disable.
 sed -i 's/# CONFIG_SCHED_AUTOGROUP is not set/CONFIG_SCHED_AUTOGROUP=y/' "$BASELINE"
 reset_config
-resolve_kernel_tuning_policy "$TREE" linux-cachyos <<< $'upstream\nn\nn' > "$OUTPUT"
+resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< $'upstream\nn\nn' > "$OUTPUT"
 kconfig_apply_optional_tuning "$TREE"
 check_preserved
 sed -i 's/CONFIG_SCHED_AUTOGROUP=y/# CONFIG_SCHED_AUTOGROUP is not set/' "$BASELINE"
@@ -113,7 +113,7 @@ cp "$BASELINE" "$TEST_TMPDIR/enabled-baseline"
 sed -i '/TRANSPARENT_HUGEPAGE/d' "$BASELINE"
 printf '# CONFIG_TRANSPARENT_HUGEPAGE is not set\n' >> "$BASELINE"
 reset_config
-resolve_kernel_tuning_policy "$TREE" linux-cachyos-hardened <<< $'upstream\nn\nn' > "$OUTPUT"
+resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< $'upstream\nn\nn' > "$OUTPUT"
 [[ "$THP_SUPPORTED" == yes ]] || fail 'Disabled baseline was mistaken for unsupported THP.'
 kconfig_apply_optional_tuning "$TREE"
 check_preserved
@@ -121,7 +121,7 @@ cp "$TEST_TMPDIR/enabled-baseline" "$BASELINE"
 
 for answers in $'upstream\ny\nn' $'upstream\nn\ny' $'upstream\ny\ny'; do
     reset_config
-    resolve_kernel_tuning_policy "$TREE" linux-cachyos <<< "$answers" > "$OUTPUT"
+    resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< "$answers" > "$OUTPUT"
     cmp "$BASELINE" "$TREE/.config" || fail 'Support probing modified real config.'
     kconfig_apply_optional_tuning "$TREE"
     make -C "$TREE" olddefconfig
@@ -136,7 +136,8 @@ done
 reset_config
 printf 'upstream\ny\nsentinel\n' > "$TEST_TMPDIR/answers"
 exec 3< "$TEST_TMPDIR/answers"
-resolve_kernel_tuning_policy "$TREE" linux-cachyos-bmq <&3 > "$OUTPUT"
+"$TREE/scripts/config" --file "$TREE/.config" --enable SCHED_ALT
+resolve_kernel_tuning_policy "$TREE" linux-fixture-alt <&3 > "$OUTPUT"
 read -r remaining <&3
 exec 3<&-
 [[ "$AUTOGROUP_SUPPORTED" == no && "$ENABLE_AUTOGROUP" == no && "$ENABLE_THP_MADVISE" == yes && "$remaining" == sentinel ]] || fail 'BMQ prompt consumed wrong input.'
@@ -144,7 +145,7 @@ exec 3<&-
 kconfig_apply_optional_tuning "$TREE"
 validate_tick_frequency "$BASELINE" "$TREE/.config" >/dev/null
 
-for variant in linux-cachyos-rt linux-cachyos-rt-bore linux-cachyos; do
+for variant in linux-fixture-rt linux-fixture-rt linux-debian-6.12; do
     reset_config
     "$TREE/scripts/config" --file "$TREE/.config" --enable PREEMPT_RT
     make -C "$TREE" olddefconfig
@@ -155,11 +156,6 @@ for variant in linux-cachyos-rt linux-cachyos-rt-bore linux-cachyos; do
     kconfig_apply_optional_tuning "$TREE"
     validate_tick_frequency "$TEST_TMPDIR/rt-baseline" "$TREE/.config" >/dev/null
 done
-# RT variant name also blocks THP when baseline preemption differs.
-reset_config
-kconfig_detect_tuning_support "$TREE" linux-cachyos-rt-bore
-[[ "$THP_SUPPORTED" == no ]] || fail 'RT variant-name guard failed.'
-
 # Alternative scheduling is excluded even under a renamed variant.
 reset_config
 "$TREE/scripts/config" --file "$TREE/.config" --enable SCHED_ALT
@@ -167,24 +163,24 @@ kconfig_detect_tuning_support "$TREE" linux-custom
 [[ "$AUTOGROUP_SUPPORTED" == no ]] || fail 'Alternative scheduler guard failed.'
 
 reset_config
-BLOCK_AUTOGROUP=yes BLOCK_THP=yes resolve_kernel_tuning_policy "$TREE" linux-cachyos <<< 'upstream' > "$OUTPUT"
+BLOCK_AUTOGROUP=yes BLOCK_THP=yes resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< 'upstream' > "$OUTPUT"
 [[ "$AUTOGROUP_SUPPORTED" == no && "$THP_SUPPORTED" == no ]] || fail 'Dependency-blocked symbols were offered.'
 ! grep -q 'Enable scheduler\|Enable transparent' "$OUTPUT" || fail 'Unavailable prompt appeared.'
 kconfig_apply_optional_tuning "$TREE"
 check_preserved
-PROBE_FAIL=yes expect_failure resolve_kernel_tuning_policy "$TREE" linux-cachyos
+PROBE_FAIL=yes expect_failure resolve_kernel_tuning_policy "$TREE" linux-debian-6.12
 cmp "$BASELINE" "$TREE/.config" || fail 'Failed support probe modified config.'
 
 # Missing declarations are skipped rather than synthesized.
 mv "$TREE/Kconfig" "$TEST_TMPDIR/Kconfig"
 printf 'config HZ\n    int\nconfig HZ_1000\n    bool\n' > "$TREE/Kconfig"
-resolve_kernel_tuning_policy "$TREE" linux-cachyos <<< 'upstream' > "$OUTPUT"
+resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< 'upstream' > "$OUTPUT"
 [[ "$AUTOGROUP_SUPPORTED" == no && "$THP_SUPPORTED" == no ]] || fail 'Missing feature was offered.'
 mv "$TEST_TMPDIR/Kconfig" "$TREE/Kconfig"
 
 # Dependency resolution dropping a requested setting must fail validation.
 reset_config
-resolve_kernel_tuning_policy "$TREE" linux-cachyos <<< $'upstream\ny\ny' > "$OUTPUT"
+resolve_kernel_tuning_policy "$TREE" linux-debian-6.12 <<< $'upstream\ny\ny' > "$OUTPUT"
 kconfig_apply_optional_tuning "$TREE"
 "$TREE/scripts/config" --file "$TREE/.config" --disable SCHED_AUTOGROUP
 expect_failure validate_tick_frequency "$BASELINE" "$TREE/.config"
@@ -192,78 +188,48 @@ expect_failure validate_tick_frequency "$BASELINE" "$TREE/.config"
 "$TREE/scripts/config" --file "$TREE/.config" --disable TRANSPARENT_HUGEPAGE_MADVISE
 expect_failure validate_tick_frequency "$BASELINE" "$TREE/.config"
 
-# Run the production entry points with external fetching/building stubbed out.
-# The real prompt resolver, support probe, tuning writes and validation run.
+# Both production launchers use the same Debian preparation/configuration flow.
 for entry in builder.sh builder-dry-run.sh; do
-    for workflow_variant in linux-cachyos-bore linux-cachyos-rt-bore linux-cachyos-bmq; do
-        (
-            if [[ -f "$REPO_ROOT/lib/build.sh" ]]; then
-                source "$REPO_ROOT/lib/build.sh"
-            fi
-            eval "$(awk '/^main\(\) \{/ {printing=1} /^if \[\[/ {printing=0} printing' "$REPO_ROOT/$entry")"
-            mx_require_build_user() { :; }
-            mx_require_host() { :; }
-            mx_ensure_base_dependencies() { :; }
-            mx_validate_toolchain_features() { :; }
-            require_commands() { :; }
-            require_build_commands() { :; }
-            detect_hardware() {
-                CPU_VENDOR=intel CPU_HAS_VMX=yes CPU_HAS_SVM=no
-                GPU_INTEL=yes WIFI_INTEL=yes THUNDERBOLT_PRESENT=yes
-            }
-            print_hardware_summary() { :; }
-            fetch_upstream() { :; }
-            select_kernel_variant() {
-                printf 'TEST: kernel selected\n' >&2
-                printf '%s\n' "$workflow_variant"
-            }
-            validate_kernel_variant() { :; }
-            install_upstream_prepare_compat() { :; }
-            prompt_kernel_name() { printf '%s\n' "${workflow_variant#linux-}"; }
-            apply_custom_kernel_name() { :; }
-            prepare_upstream_source() {
-                printf 'TEST: sources prepared\n' >&2
-                printf '%s\n' "$TREE"
-            }
-            ask_compile() { return 1; }
-            mktemp() {
-                if [[ "$*" == *--tmpdir* ]]; then
-                    mkdir -p "$TEST_TMPDIR/work/upstream/$workflow_variant"
-                    : >"$TEST_TMPDIR/work/upstream/$workflow_variant/.kernelforge-toolchain-env"
-                    printf '%s\n' "$TEST_TMPDIR/work"
-                else
-                    command mktemp "$@"
-                fi
-            }
-            kconfig_apply_profile() { :; }
-            kconfig_apply_policy() {
-                kconfig_apply_tick_frequency "$1"
-                kconfig_apply_optional_tuning "$1"
-            }
-            validate_kernel_policy() { validate_tick_frequency "$2" "$1/.config"; }
-            reset_config
-            if [[ "$workflow_variant" == *-rt-* ]]; then
-                "$TREE/scripts/config" --file "$TREE/.config" --enable PREEMPT_RT
-            fi
-            if [[ "$PROFILE_NAME" == thinkpad ]]; then
-                answers=$'y\ny\ny\ny\nupstream\ny\ny'
-            else
-                answers=$'y\nn\nn\nn\nn\nupstream\ny\ny'
-            fi
-            main <<< "$answers" > "$OUTPUT" 2>&1
-            selected=$(awk '/TEST: kernel selected/ {print NR; exit}' "$OUTPUT")
-            prepared=$(awk '/TEST: sources prepared/ {print NR; exit}' "$OUTPUT")
-            tuning=$(awk '/Optional tuning for/ {print NR; exit}' "$OUTPUT")
-            [[ -n "$selected" && -n "$prepared" && -n "$tuning" && "$selected" -lt "$prepared" && "$prepared" -lt "$tuning" ]] || fail 'Tuning prompted before selected sources were prepared.'
-            if [[ "$workflow_variant" == *bmq* ]]; then
-                ! grep -q 'Enable scheduler autogrouping?' "$OUTPUT" || fail 'Workflow offered BMQ autogrouping.'
-            elif [[ "$workflow_variant" == *-rt-* ]]; then
-                ! grep -q 'Enable transparent hugepages' "$OUTPUT" || fail 'Workflow offered RT THP.'
-            else
-                grep -q 'Enable scheduler autogrouping?' "$OUTPUT" || fail 'Workflow missed autogrouping.'
-                grep -q 'Enable transparent hugepages' "$OUTPUT" || fail 'Workflow missed THP.'
-            fi
-        )
-    done
+    (
+        source "$REPO_ROOT/lib/build.sh"
+        eval "$(awk '/^main\(\) \{/ {printing=1} /^if \[\[/ {printing=0} printing' "$REPO_ROOT/$entry")"
+        mx_require_build_user() { :; }
+        mx_require_host() { :; }
+        mx_ensure_base_dependencies() { :; }
+        mx_validate_toolchain_features() { :; }
+        require_build_commands() { :; }
+        detect_hardware() { CPU_VENDOR=intel; }
+        print_hardware_summary() { :; }
+        mx_resolve_debian_kernel() { KF_VARIANT=linux-debian-6.12; printf 'TEST: kernel selected\n'; }
+        prompt_kernel_name() { printf 'mx-thinkpad-debian\n'; }
+        prepare_debian_source() {
+            mkdir -p "$1"
+            : >"$1/.kernelforge-toolchain-env"
+            cp "$TREE/.config" "$1/config"
+            printf 'TEST: sources prepared\n' >&2
+            printf '%s\n' "$TREE"
+        }
+        ask_compile() { return 1; }
+        mktemp() {
+            if [[ "$*" == *--tmpdir* ]]; then
+                mkdir -p "$TEST_TMPDIR/work"
+                printf '%s\n' "$TEST_TMPDIR/work"
+            else command mktemp "$@"; fi
+        }
+        kconfig_apply_profile() { :; }
+        kconfig_apply_policy() {
+            kconfig_apply_tick_frequency "$1"
+            kconfig_apply_optional_tuning "$1"
+        }
+        validate_kernel_policy() { validate_tick_frequency "$2" "$1/.config"; }
+        reset_config
+        main <<< $'y\ny\ny\nupstream\ny\ny' >"$OUTPUT" 2>&1
+        selected=$(awk '/TEST: kernel selected/ {print NR; exit}' "$OUTPUT")
+        prepared=$(awk '/TEST: sources prepared/ {print NR; exit}' "$OUTPUT")
+        tuning=$(awk '/Optional tuning for/ {print NR; exit}' "$OUTPUT")
+        [[ -n "$selected" && -n "$prepared" && -n "$tuning" && "$selected" -lt "$prepared" && "$prepared" -lt "$tuning" ]] || fail 'Tuning prompted before Debian sources were prepared.'
+        grep -q 'Enable scheduler autogrouping?' "$OUTPUT" || fail 'Workflow missed autogrouping.'
+        grep -q 'Enable transparent hugepages' "$OUTPUT" || fail 'Workflow missed THP.'
+    )
 done
 printf 'Optional tuning tests passed (%s).\n' "$PROFILE_NAME"

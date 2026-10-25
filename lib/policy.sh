@@ -44,6 +44,7 @@ ask_yes_no() {
 }
 
 resolve_virtualization_policy() {
+    local tree="${1:-}"
     KEEP_KVM="yes"
     KEEP_INTEL_TDX="n/a"
     KEEP_AMD_SEV="n/a"
@@ -57,7 +58,7 @@ resolve_virtualization_policy() {
         KEEP_KVM="no"
     fi
 
-    if [[ "$CPU_VENDOR" == "intel" ]]; then
+    if [[ "$CPU_VENDOR" == "intel" ]] && { [[ -z "$tree" ]] || kconfig_symbol_exists "$tree" KVM_INTEL_TDX; }; then
         if ask_yes_no \
             "Keep Intel TDX support?" \
             "$DEFAULT_KEEP_INTEL_TDX"
@@ -66,7 +67,7 @@ resolve_virtualization_policy() {
         else
             KEEP_INTEL_TDX="no"
         fi
-    elif [[ "$CPU_VENDOR" == "amd" ]]; then
+    elif [[ "$CPU_VENDOR" == "amd" ]] && { [[ -z "$tree" ]] || kconfig_symbol_exists "$tree" KVM_AMD_SEV; }; then
         if ask_yes_no \
             "Keep AMD SEV support?" \
             "$DEFAULT_KEEP_AMD_SEV"
@@ -121,7 +122,7 @@ resolve_nvme_policy() {
 }
 
 resolve_policy() {
-    resolve_virtualization_policy
+    resolve_virtualization_policy "${1:-}"
     resolve_nvme_policy
 }
 

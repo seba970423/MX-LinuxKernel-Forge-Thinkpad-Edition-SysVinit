@@ -1,0 +1,7 @@
+Debian linux-config-6.12 6.12.107-1 amd64
+config.amd64_none_amd64.xz, standard non-RT configuration.
+Source: https://deb.debian.org/debian/pool/main/l/linux/
+This is a regression-test fixture, not the runtime build baseline.
+The builder downloads matching source/config packages from APT each run.
+SHA256 linux-config package: 77f7110636e83da8b130fa87da94191361a0125c7c4d6f207857c68e6a073953
+SHA256 reference configuration: 9b460f1003db4d417288e9c14caecfa14245dab07186df948fef0f3661e38ceb

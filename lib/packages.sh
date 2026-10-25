@@ -8,23 +8,32 @@ compile_selected_kernel() {
     local manifest="$package_dir/.kernelforge-built-packages" package name architecture release
     local before after jobs="${KERNELFORGE_JOBS:-$(nproc)}" start_seconds=$SECONDS
     [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || { echo 'ERROR: Invalid KERNELFORGE_JOBS.' >&2; return 1; }
-    source "$package_dir/.kernelforge-recipe"
+    local source_version
+    source_version="$(<"$package_dir/.kernelforge-source-version")"
+    dpkg --validate-version "$source_version" || return 1
+    before="$(sha256sum "$tree/.config")"
+    cp "$tree/.config" "$package_dir/.kernelforge-validated.config"
+    # Linux 6.12 setlocalversion reads include/config/auto.conf, not .config.
+    # Sync it before asking for kernelrelease, otherwise a fresh source tree
+    # can report the bare version and misidentify its custom image/headers.
+    : >"$log_file"
+    kernelforge_run_logged 'Preparing Debian package metadata' "$log_file" make -C "$tree" syncconfig || return 1
+    [[ "$before" == "$(sha256sum "$tree/.config")" ]] || {
+        echo 'ERROR: Validated configuration changed during metadata preparation.' >&2; return 1;
+    }
     release="$(make -s -C "$tree" kernelrelease)" || return 1
     [[ "$release" =~ ^[a-zA-Z0-9.+-]+$ && ${#release} -le 64 ]] || {
         echo 'ERROR: Kernel release is unsuitable for Debian packaging.' >&2; return 1;
     }
     printf '%s\n' "$release" >"$package_dir/.kernelforge-kernelrelease"
-    before="$(sha256sum "$tree/.config")"
-    cp "$tree/.config" "$package_dir/.kernelforge-validated.config"
     printf '==> Building Debian packages with %s jobs.\n' "$jobs"
     printf '==> Kernel release: %s\n==> Build log: %s\n' "$release" "$log_file"
     printf '==> Elapsed-time updates every %s seconds; compiler output is saved in the log.\n' \
         "${KERNELFORGE_PROGRESS_INTERVAL:-30}"
-    # Use the final, validated tree directly. No source extraction, upstream
-    # prepare(), or clean target runs again here.
-    : >"$log_file"
+    # Use the final, validated tree directly. No source extraction or
+    # clean target runs again here.
     if ! kernelforge_run_logged Build "$log_file" make -C "$tree" -j"$jobs" bindeb-pkg \
-        KDEB_PKGVERSION="$KF_PACKAGE_VERSION+mx1" \
+        KDEB_PKGVERSION="$source_version+mx1" \
         KDEB_SOURCENAME=kernelforge-thinkpad; then
         printf 'ERROR: Debian kernel build did not complete. Log: %s\n' "$log_file" >&2
         return 1
@@ -88,10 +97,9 @@ install_built_kernel() {
         echo 'ERROR: update-grub is missing. This edition integrates with MX/Debian GRUB.' >&2; return 1;
     }
     if ! command -v update-initramfs >/dev/null; then mx_apt_install initramfs-tools || return 1; fi
-    # DKMS hooks must see the compiler used for the kernel even when sudo's
-    # secure_path would hide a private LLVM/Rust toolchain.
+    # DKMS hooks use the same distribution compiler as the kernel build.
     local variable
-    for variable in BINDGEN LIBCLANG_PATH RUST_LIB_SRC CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN LLVM LLVM_IAS; do
+    for variable in CC HOSTCC LD HOSTLD AR NM STRIP OBJCOPY OBJDUMP READELF HOSTCXX; do
         if [[ -v "$variable" ]]; then install_environment+=("$variable=${!variable}"); fi
     done
     mx_as_root /usr/bin/env "${install_environment[@]}" apt-get --no-remove --reinstall install "${packages[@]}" || return 1

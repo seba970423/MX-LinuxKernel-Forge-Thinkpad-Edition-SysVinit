@@ -103,20 +103,13 @@ validate_protected_symbol() {
         return
     fi
 
-    # Older/LTS kernels may predate a protected ThinkPad driver. That is not a
-    # policy regression; there is nothing this builder can preserve. If the
-    # symbol exists in the selected source but upstream left it disabled, fail
-    # instead of silently claiming the facility is protected.
-    if ! kconfig_symbol_exists "$tree" "$symbol"; then
-        printf '    OK  CONFIG_%s unavailable in this kernel version\n' "$symbol"
-        return 0
+    # Debian's disabled driver and transport choices are deliberate too.
+    # Preserve them instead of forcing the old source provider's defaults.
+    if ! kconfig_symbol_exists "$tree" "$symbol" && [[ "$before" == absent ]]; then
+        printf '    OK  CONFIG_%s unavailable in this Debian kernel version\n' "$symbol"
     fi
+    validate_preserved "$baseline" "$config" "$symbol"
 
-    if [[ "$before" != "y" && "$before" != "m" ]]; then
-        validation_error \
-            "ThinkPad allowlist requires CONFIG_${symbol}, but the normalized upstream baseline resolved to '${before}'."
-        return 1
-    fi
 }
 
 validate_profile_invariants() {
@@ -289,4 +282,24 @@ validate_kernel_policy() {
     done
 
     printf '==> Kernel policy validation passed.\n'
+}
+
+# These groups cover the areas implicated in the reported desktop/input issues.
+# Compare against the original distribution config, including the first
+# normalization, so a changed toolchain cannot silently redefine the baseline.
+mx_validate_debian_config() {
+    local baseline="$1" config="$2"
+    validate_disabled "$config" PREEMPT_RT || return 1
+    validate_config_group_preserved "$baseline" "$config" \
+        '^(CONFIG_PREEMPT[A-Z0-9_]*=.*|# CONFIG_PREEMPT[A-Z0-9_]* is not set)$' \
+        'Debian preemption settings' || return 1
+    validate_config_group_preserved "$baseline" "$config" \
+        '^(CONFIG_(MOUSE_PS2[A-Z0-9_]*|RMI4[A-Z0-9_]*|HID_RMI|I2C_HID[A-Z0-9_]*)=.*|# CONFIG_(MOUSE_PS2[A-Z0-9_]*|RMI4[A-Z0-9_]*|HID_RMI|I2C_HID[A-Z0-9_]*) is not set)$' \
+        'Debian touchpad and TrackPoint transport settings' || return 1
+    validate_config_group_preserved "$baseline" "$config" \
+        '^(CONFIG_DRM_I915[A-Z0-9_]*=.*|# CONFIG_DRM_I915[A-Z0-9_]* is not set)$' \
+        'Debian Intel graphics settings' || return 1
+    validate_config_group_preserved "$baseline" "$config" \
+        '^(CONFIG_(GENERIC_CPU|MCORE2|MATOM|MK8|MPSC|MBARCELONA|X86_64_VERSION|X86_NATIVE_CPU)=.*|# CONFIG_(GENERIC_CPU|MCORE2|MATOM|MK8|MPSC|MBARCELONA|X86_64_VERSION|X86_NATIVE_CPU) is not set)$' \
+        'Debian CPU target' || return 1
 }

@@ -41,8 +41,15 @@ mx_apt_install() {
     mx_as_root apt-get --no-remove --no-install-recommends install "$@" >&2
 }
 
+mx_refresh_apt_lists() {
+    [[ "${KERNELFORGE_APT_REFRESHED:-0}" != 1 ]] || return 0
+    printf '==> Refreshing APT package lists for Debian source/dependency selection...\n' >&2
+    mx_as_root apt-get update >&2 || return 1
+    KERNELFORGE_APT_REFRESHED=1
+}
+
 mx_base_packages() {
-    printf '%s\n' build-essential git ca-certificates curl gnupg dirmngr \
+    printf '%s\n' build-essential ca-certificates \
         bc bison flex m4 libssl-dev libelf-dev libdw-dev libncurses-dev zlib1g-dev \
         libzstd-dev libxxhash-dev pahole cpio rsync xz-utils zstd lz4 \
         gettext pkg-config python3 perl patch fakeroot dpkg-dev debhelper kmod
@@ -61,7 +68,7 @@ mx_ensure_base_dependencies() {
     if ! read -r -p 'Install these dependencies through APT? [Y/n]: ' answer; then answer=n; fi
     case "${answer:-y}" in
         y|Y|yes|YES|Yes)
-            mx_as_root apt-get update >&2 || return 1
+            mx_refresh_apt_lists || return 1
             mx_apt_install "${missing[@]}" || return 1 ;;
         *) echo 'ERROR: Required build dependencies are missing.' >&2; return 1 ;;
     esac
