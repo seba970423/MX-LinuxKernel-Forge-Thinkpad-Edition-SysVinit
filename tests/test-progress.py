@@ -66,9 +66,10 @@ class ProgressTests(unittest.TestCase):
     def test_heartbeat_for_silent_and_busy_commands(self):
         for noisy in (False, True):
             with self.subTest(noisy=noisy):
+                # Leave startup margin when CI is also compiling a kernel.
                 producer = (
                     "import os,time\n"
-                    "end=time.monotonic()+1.3\n"
+                    "end=time.monotonic()+2.5\n"
                     "while time.monotonic()<end:\n"
                     + (" os.write(1,b'CC kernel/object.o\\n')\n" if noisy else "")
                     + " time.sleep(0.01)\n"
@@ -143,21 +144,13 @@ class ProgressTests(unittest.TestCase):
                 process.communicate(timeout=3)
 
     def test_preparation_failure_excerpt_is_bounded(self):
-        fake_root = self.directory / "fake-failing-repo"
-        (fake_root / "lib").mkdir(parents=True)
-        package = self.directory / "checkout/linux-test"
+        package = self.directory / "checkout/linux-debian-6.12"
         package.mkdir(parents=True)
-        (fake_root / "lib/prepare.sh").write_text(
-            "#!/usr/bin/env bash\nset -euo pipefail\n"
-            f"source {shlex.quote(str(ROOT / 'lib/progress.sh'))}\n"
-            "kernelforge_run_logged 'Source preparation' \"$KERNELFORGE_PREPARE_LOG\" "
-            "bash -c 'for ((i=0;i<200;i++)); do echo compiler-line-$i; done; "
-            "echo actual-prepare-error >&2; exit 7'\n"
-        )
         result = self.shell(
-            'set -euo pipefail; source "$1/lib/build.sh"; '
-            f"REPO_ROOT={shlex.quote(str(fake_root))}; "
-            f"prepare_upstream_source {shlex.quote(str(package.parent))} linux-test"
+            'set -euo pipefail; source "$1/lib/sources.sh"; '
+            'KF_DEBIAN_VERSION=6.12.107-1 KF_DEBIAN_SERIES=6.12; '
+            "mx_download_debian_packages() { bash -c 'for ((i=0;i<200;i++)); do echo compiler-line-$i; done; echo actual-prepare-error >&2; exit 7'; }; "
+            f"prepare_debian_source {shlex.quote(str(package))} mx-thinkpad-debian"
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"actual-prepare-error", result.stderr)
@@ -169,28 +162,17 @@ class ProgressTests(unittest.TestCase):
         self.assertLess(len(log.splitlines()), 300)
 
     def test_preparation_prompt_remains_visible_before_answer(self):
-        fake_root = self.directory / "fake-repo"
-        (fake_root / "lib").mkdir(parents=True)
-        package = self.directory / "checkout/linux-test"
-        package.mkdir(parents=True)
-        (fake_root / "lib/prepare.sh").write_text(
-            "#!/usr/bin/env bash\nset -euo pipefail\n"
-            f"source {shlex.quote(str(ROOT / 'lib/progress.sh'))}\n"
-            "read -r -p 'Download the isolated Rust toolchain? [Y/n]: ' answer\n"
-            "[[ $answer == y ]]\n"
-            "kernelforge_run_logged 'Source preparation' \"$KERNELFORGE_PREPARE_LOG\" "
-            "printf 'unreadable-compiler-chatter\\n'\n"
-            "mkdir -p \"$1/src/kernel/scripts\"\n"
-            "touch \"$1/src/kernel/scripts/config\"\n"
+        package = self.directory / "prompt-test"
+        package.mkdir()
+        command = (
+            'set -euo pipefail; source "$1/lib/debian.sh"; source "$1/lib/progress.sh"; test_log="$2"; '
+            'dpkg-query() { [[ "${!#}" == libdw-dev ]] || printf installed; }; '
+            'mx_as_root() { kernelforge_run_logged Dependencies "$test_log" printf "unreadable-compiler-chatter\\n"; }; '
+            'mx_ensure_base_dependencies; printf "RESULT=dependencies-ready\\n"'
         )
         pid, terminal = pty.fork()
         if pid == 0:
-            os.execlp(
-                "bash", "bash", "-c",
-                'set -euo pipefail; source "$1/lib/build.sh"; REPO_ROOT="$2"; '
-                'tree="$(prepare_upstream_source "$3" linux-test)"; printf "RESULT=%s\\n" "$tree"',
-                "_", str(ROOT), str(fake_root), str(package.parent),
-            )
+            os.execlp("bash", "bash", "-c", command, "_", str(ROOT), str(self.log))
         output = b""
         try:
             deadline = time.monotonic() + 5
@@ -211,11 +193,11 @@ class ProgressTests(unittest.TestCase):
                     os.write(terminal, b"y\n")
                     answered = True
             self.assertTrue(answered, output)
-            self.assertIn(f"RESULT={package}/src/kernel".encode(), output)
+            self.assertIn(b"RESULT=dependencies-ready", output)
             self.assertNotIn(b"unreadable-compiler-chatter", output)
-            log = (package / ".kernelforge-prepare.log").read_text()
+            log = self.log.read_text()
             self.assertIn("unreadable-compiler-chatter", log)
-            self.assertIn("Download the isolated Rust toolchain?", log)
+            self.assertIn(b"Install these dependencies through APT?", output)
         finally:
             os.close(terminal)
             waited, _ = os.waitpid(pid, os.WNOHANG)

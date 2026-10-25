@@ -8,8 +8,6 @@ source "$REPO_ROOT/lib/debian.sh"
 source "$REPO_ROOT/lib/toolchain.sh"
 source "$REPO_ROOT/lib/sources.sh"
 source "$REPO_ROOT/lib/packages.sh"
-source "$REPO_ROOT/lib/upstream.sh"
-source "$REPO_ROOT/lib/pgp.sh"
 source "$REPO_ROOT/lib/build.sh"
 source "$REPO_ROOT/lib/naming.sh"
 source "$REPO_ROOT/lib/profile.sh"
@@ -40,7 +38,7 @@ main() {
     print_hardware_summary
     printf '\n'
 
-    resolve_policy
+    mx_resolve_debian_kernel
     printf '\n'
 
     local workdir
@@ -58,26 +56,16 @@ main() {
     printf '==> Work directory: %s\n' "$workdir"
     printf '==> Compiler temporary directory: %s\n' "$TMPDIR"
 
-    fetch_upstream "$checkout"
-
-    printf '\n'
-    variant="$(select_kernel_variant "$checkout")"
-    printf '==> Selected kernel variant: %s\n' "$variant"
-
-    validate_kernel_variant "$checkout" "$variant"
-
-    custom_name="$(prompt_kernel_name "$variant")"
-    apply_custom_kernel_name "$checkout" "$variant" "$custom_name"
-
-    install_upstream_prepare_compat "$checkout" "$variant"
-
-    tree="$(prepare_upstream_source "$checkout" "$variant")"
+    variant="$KF_VARIANT"
+    custom_name="$(prompt_kernel_name)"
+    tree="$(prepare_debian_source "$checkout/$variant" "$custom_name")"
 
     printf '==> Prepared kernel tree: %s\n' "$tree"
 
     # shellcheck source=/dev/null
     source "$checkout/$variant/.kernelforge-toolchain-env"
-    configure_and_validate_kernel "$tree" "$variant" "$checkout/$variant/.kernelforge-config.log"
+    resolve_policy "$tree"
+    configure_and_validate_kernel "$tree" "$variant" "$checkout/$variant/.kernelforge-config.log" "$checkout/$variant/config"
 
     printf '\n'
     printf '==> DRY-RUN PASSED.\n'

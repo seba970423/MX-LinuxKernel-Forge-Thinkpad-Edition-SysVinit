@@ -1,120 +1,126 @@
 #!/usr/bin/env bash
-# Native source acquisition. The upstream recipe supplies metadata and patches;
-# Debian tools verify, extract and build it without makepkg or pacman.
+# Debian's linux-source archive already includes the Debian kernel patches.
+# Download binary source/config packages through authenticated APT metadata;
+# deb-src entries and a third-party kernel recipe are not needed.
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
 
-mx_recipe_metadata() {
-    bash "$REPO_ROOT/lib/recipe.sh" metadata "$1"
+mx_debian_kernel_series() {
+    local version
+    version="$(cat "${1:-/etc/debian_version}")" || return 1
+    case "$version" in
+        12|12.*) printf '6.1\n' ;;
+        13|13.*) printf '6.12\n' ;;
+        *)
+            printf 'ERROR: Unsupported Debian base %s; supported bases are Debian 12 and 13.\n' "$version" >&2
+            return 1 ;;
+    esac
 }
 
-mx_source_filename() {
-    local entry="$1" name
-    if [[ "$entry" != https://* && "$entry" != *::* && "$entry" == */* ]]; then
-        echo 'ERROR: Local sources must have plain filenames.' >&2; return 1
-    fi
-    if [[ "$entry" == *::* ]]; then name="${entry%%::*}"; else name="${entry##*/}"; fi
-    [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$ && "$name" != '.' && "$name" != '..' ]] || {
-        printf 'ERROR: Unsupported upstream source filename: %s\n' "$name" >&2; return 1;
+mx_apt_package_digest() {
+    local package="$1" version="$2" digest
+    digest="$(apt-cache show "$package=$version" | awk '/^SHA256:/ {print $2}' | sort -u)" || return 1
+    [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || {
+        printf 'ERROR: No unique APT SHA256 for %s=%s. Refresh APT package lists and retry.\n' "$package" "$version" >&2
+        return 1
     }
-    printf '%s\n' "$name"
+    printf '%s\n' "$digest"
 }
 
-mx_verify_checksums() (
-    local package_dir="$1" algorithm file i expected actual checked=0
-    local -a source=() b2sums=() sha256sums=() sha512sums=() sha1sums=() md5sums=()
-    source "$package_dir/.kernelforge-recipe"
-    for algorithm in b2 sha256 sha512 sha1 md5; do
-        local -n sums="${algorithm}sums"
-        (( ${#sums[@]} > 0 )) || continue
-        (( ${#sums[@]} == ${#source[@]} )) || {
-            printf 'ERROR: Upstream %ssums/source count mismatch.\n' "$algorithm" >&2; return 1;
+mx_resolve_debian_kernel() {
+    mx_refresh_apt_lists || return 1
+    KF_DEBIAN_SERIES="$(mx_debian_kernel_series /etc/debian_version)" || return 1
+    KF_DEBIAN_SOURCE="linux-source-$KF_DEBIAN_SERIES"
+    KF_DEBIAN_CONFIG="linux-config-$KF_DEBIAN_SERIES"
+    KF_DEBIAN_VERSION="$(mx_apt_candidate "$KF_DEBIAN_SOURCE")" || return 1
+    [[ "$KF_DEBIAN_VERSION" == "$KF_DEBIAN_SERIES".* && "$KF_DEBIAN_VERSION" != *~bpo* ]] &&
+        dpkg --validate-version "$KF_DEBIAN_VERSION" || {
+            printf 'ERROR: No stable %s candidate in enabled APT repositories. Refresh package lists and retry.\n' "$KF_DEBIAN_SOURCE" >&2
+            return 1
         }
-        for i in "${!source[@]}"; do
-            expected="${sums[$i]}"
-            [[ "$expected" != SKIP ]] || continue
-            file="$(mx_source_filename "${source[$i]}")" || return 1
-            actual="$("${algorithm}sum" "$package_dir/$file")" || return 1
-            actual="${actual%% *}"
-            [[ "${actual,,}" == "${expected,,}" ]] || {
-                printf 'ERROR: %s checksum mismatch: %s\n' "$algorithm" "$file" >&2; return 1;
-            }
-            ((checked+=1))
-        done
-    done
-    (( checked > 0 )) || { echo 'ERROR: Upstream provided no checked sources.' >&2; return 1; }
+    KF_DEBIAN_SOURCE_SHA256="$(mx_apt_package_digest "$KF_DEBIAN_SOURCE" "$KF_DEBIAN_VERSION")" || return 1
+    KF_DEBIAN_CONFIG_SHA256="$(mx_apt_package_digest "$KF_DEBIAN_CONFIG" "$KF_DEBIAN_VERSION")" || return 1
+    KF_VARIANT="linux-debian-$KF_DEBIAN_SERIES"
+    printf '==> Debian kernel source: %s=%s\n' "$KF_DEBIAN_SOURCE" "$KF_DEBIAN_VERSION"
+    printf '==> Matching baseline: %s, standard amd64 configuration.\n' "$KF_DEBIAN_CONFIG"
+}
+
+mx_download_debian_packages() (
+    local directory="$1"
+    cd -- "$directory" || return 1
+    # APT verifies repository authentication and package hashes. No sudo, APT
+    # source edits, package installation, or unauthenticated override is used.
+    apt-get download "$KF_DEBIAN_SOURCE=$KF_DEBIAN_VERSION" "$KF_DEBIAN_CONFIG=$KF_DEBIAN_VERSION"
 )
 
-mx_verify_signatures() (
-    local package_dir="$1" entry name target status signer primary pin valid count=0
-    local -a source=() validpgpkeys=()
-    source "$package_dir/.kernelforge-recipe"
-    (( ${#validpgpkeys[@]} > 0 )) || { echo 'ERROR: Missing pinned upstream PGP keys.' >&2; return 1; }
-    for entry in "${source[@]}"; do
-        name="$(mx_source_filename "$entry")" || return 1
-        case "$name" in *.asc|*.sig|*.sign) ;; *) continue ;; esac
-        target="${name%.*}"
-        [[ -f "$package_dir/$target" ]] || { echo 'ERROR: Signature has no matching source.' >&2; return 1; }
-        status="$(gpg --batch --status-fd=1 --verify "$package_dir/$name" "$package_dir/$target")" || return 1
-        valid=0
-        while read -r signer primary; do
-            for pin in "${validpgpkeys[@]}"; do
-                if [[ "${signer^^}" == "${pin^^}" || "${primary^^}" == "${pin^^}" ]]; then valid=1; fi
-            done
-        done < <(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {print $3, $NF}' <<<"$status")
-        (( valid == 1 )) || { echo 'ERROR: Signature does not match a pinned upstream fingerprint.' >&2; return 1; }
-        ((count+=1))
+mx_find_debian_package() {
+    local directory="$1" expected="$2" architecture="$3" digest="$4"
+    local file name version arch actual match=''
+    for file in "$directory/"*.deb; do
+        [[ -f "$file" && ! -L "$file" ]] || continue
+        name="$(dpkg-deb -f "$file" Package)" || return 1
+        [[ "$name" == "$expected" ]] || continue
+        version="$(dpkg-deb -f "$file" Version)" || return 1
+        arch="$(dpkg-deb -f "$file" Architecture)" || return 1
+        [[ "$version" == "$KF_DEBIAN_VERSION" && "$arch" == "$architecture" && -z "$match" ]] || {
+            printf 'ERROR: Ambiguous or mismatched Debian source/config package: %s\n' "$file" >&2
+            return 1
+        }
+        actual="$(sha256sum -- "$file")" || return 1
+        [[ "${actual%% *}" == "$digest" ]] || {
+            printf 'ERROR: Debian source/config package SHA256 mismatch: %s\n' "$file" >&2
+            return 1
+        }
+        match="$file"
     done
-    (( count > 0 )) || { echo 'ERROR: No signed source archive was found.' >&2; return 1; }
-)
+    [[ -n "$match" ]] || { printf 'ERROR: Missing downloaded package %s.\n' "$expected" >&2; return 1; }
+    printf '%s\n' "$match"
+}
 
-mx_acquire_sources() (
-    set -e
-    local package_dir="$1" entry name url file tree
-    local -a source=() validpgpkeys=()
-    mx_recipe_metadata "$package_dir" >"$package_dir/.kernelforge-recipe"
-    source "$package_dir/.kernelforge-recipe"
-    [[ "$KF_SOURCE_TREE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$ ]] || return 1
-    [[ ! -e "$package_dir/src" ]] || { echo 'ERROR: Refusing to overwrite an existing source tree.' >&2; return 1; }
-    local -A seen=()
-    for entry in "${source[@]}"; do
-        name="$(mx_source_filename "$entry")"
-        [[ -z "${seen[$name]:-}" ]] || { echo 'ERROR: Duplicate upstream source filename.' >&2; return 1; }
-        seen[$name]=1
-        url="${entry#*::}"
-        case "$url" in
-            https://*)
-                printf '==> Downloading %s\n' "$name" >&2
-                kernelforge_run_logged 'Source download' "${KERNELFORGE_PREPARE_LOG:-$package_dir/.kernelforge-prepare.log}" \
-                    curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-                    --output "$package_dir/$name.part" "$url"
-                mv -- "$package_dir/$name.part" "$package_dir/$name" ;;
-            *)
-                [[ "$entry" == "$name" && -f "$package_dir/$name" ]] || {
-                    printf 'ERROR: Unsupported upstream source: %s\n' "$entry" >&2; return 1;
-                } ;;
-        esac
-    done
-    mx_verify_checksums "$package_dir"
-    ensure_upstream_pgp_keys "$package_dir"
-    kernelforge_run_logged 'Verifying source signatures' \
-        "${KERNELFORGE_PREPARE_LOG:-$package_dir/.kernelforge-prepare.log}" mx_verify_signatures "$package_dir"
-    printf '==> Source signatures verified against the pinned signing keys.\n' >&2
-    mkdir -- "$package_dir/src"
-    for entry in "${source[@]}"; do
-        name="$(mx_source_filename "$entry")"
-        file="$package_dir/$name"
-        ln -s -- "$file" "$package_dir/src/$name"
-        case "$name" in
-            *.tar.gz|*.tar.xz|*.tar.zst|*.tar.bz2)
-                kernelforge_run_logged 'Extracting kernel source' \
-                    "${KERNELFORGE_PREPARE_LOG:-$package_dir/.kernelforge-prepare.log}" \
-                    tar --extract --file "$file" --directory "$package_dir/src" --no-same-owner --no-same-permissions ;;
-            *.patch.zst) zstd -dc -- "$file" >"$package_dir/src/${name%.zst}" ;;
-        esac
-    done
-    tree="$package_dir/src/$KF_SOURCE_TREE"
-    [[ -f "$tree/Makefile" && -x "$tree/scripts/config" ]] || {
-        echo 'ERROR: Verified archive has no expected kernel tree.' >&2; return 1;
+prepare_debian_source() {
+    local package_dir="$1" custom_name="$2"
+    local log_file="$package_dir/.kernelforge-prepare.log"
+    local unpack="$package_dir/src/debian-packages" tree="$package_dir/src/linux-source-$KF_DEBIAN_SERIES"
+    local source_deb config_deb archive config
+    mkdir -p -- "$package_dir/downloads" "$unpack" || return 1
+    : >"$log_file"
+    printf '==> Preparing Debian %s sources (no kernel package build)...\n' "$KF_DEBIAN_VERSION" >&2
+    printf '==> Detailed prepare log: %s\n' "$log_file" >&2
+    kernelforge_run_logged 'Downloading Debian source and configuration' "$log_file" \
+        mx_download_debian_packages "$package_dir/downloads" || return 1
+    source_deb="$(mx_find_debian_package "$package_dir/downloads" "$KF_DEBIAN_SOURCE" all "$KF_DEBIAN_SOURCE_SHA256")" || return 1
+    config_deb="$(mx_find_debian_package "$package_dir/downloads" "$KF_DEBIAN_CONFIG" amd64 "$KF_DEBIAN_CONFIG_SHA256")" || return 1
+    kernelforge_run_logged 'Unpacking Debian source package' "$log_file" dpkg-deb --extract "$source_deb" "$unpack" || return 1
+    kernelforge_run_logged 'Unpacking Debian configuration package' "$log_file" dpkg-deb --extract "$config_deb" "$unpack" || return 1
+    archive="$unpack/usr/src/linux-source-$KF_DEBIAN_SERIES.tar.xz"
+    config="$unpack/usr/src/linux-config-$KF_DEBIAN_SERIES/config.amd64_none_amd64.xz"
+    [[ -f "$archive" && -f "$config" && ! -e "$tree" ]] || {
+        echo 'ERROR: Unexpected Debian source/config package layout or existing source tree.' >&2
+        return 1
     }
-)
+    kernelforge_run_logged 'Extracting Debian kernel' "$log_file" tar --extract --file "$archive" \
+        --directory "$package_dir/src" --no-same-owner --no-same-permissions || return 1
+    xz --decompress --stdout -- "$config" >"$package_dir/config" || return 1
+    grep -qx 'CONFIG_X86_64=y' "$package_dir/config" &&
+        ! grep -qx 'CONFIG_PREEMPT_RT=y' "$package_dir/config" || {
+            echo 'ERROR: Expected Debian standard non-RT amd64 configuration.' >&2; return 1;
+        }
+    [[ -x "$tree/scripts/config" && -f "$tree/Makefile" ]] || return 1
+    cp -- "$package_dir/config" "$tree/.config" || return 1
+    printf '%s\n' "$KF_DEBIAN_VERSION" >"$package_dir/.kernelforge-source-version"
+    {
+        printf 'source=%s\nconfig=%s\nversion=%s\n' "$KF_DEBIAN_SOURCE" "$KF_DEBIAN_CONFIG" "$KF_DEBIAN_VERSION"
+        printf 'source_sha256=%s\nconfig_sha256=%s\n' "$KF_DEBIAN_SOURCE_SHA256" "$KF_DEBIAN_CONFIG_SHA256"
+        printf 'configuration=config.amd64_none_amd64.xz\n'
+    } >"$package_dir/.kernelforge-source-info"
+    apply_custom_kernel_name "$tree" "$custom_name" >&2 || return 1
+    # Debian's archive signing keys are not shipped in linux-source. Keep
+    # module signing, generating a local build key instead of using Debian's
+    # private signing paths. This does not enroll keys for Secure Boot.
+    "$tree/scripts/config" --file "$tree/.config" --set-str SYSTEM_TRUSTED_KEYS '' || return 1
+    "$tree/scripts/config" --file "$tree/.config" --set-str SYSTEM_REVOCATION_KEYS '' || return 1
+    "$tree/scripts/config" --file "$tree/.config" --set-str MODULE_SIG_KEY certs/signing_key.pem || return 1
+    mx_prepare_toolchain "$package_dir" "$tree" >&2 || return 1
+    printf '==> Debian sources and configuration prepared.\n' >&2
+    printf '%s\n' "$tree"
+}

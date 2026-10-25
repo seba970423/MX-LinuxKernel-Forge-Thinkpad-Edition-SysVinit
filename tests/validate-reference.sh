@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-REFERENCE="$REPO_ROOT/profiles/reference/thinkpad-t590-cachyos-7.1.8.config"
+REFERENCE="$REPO_ROOT/profiles/reference/debian-6.12.107-amd64.config"
 
 # shellcheck source=/dev/null
 source "$REPO_ROOT/profiles/thinkpad.conf"
@@ -24,12 +24,9 @@ for symbol in "${PRESERVE_ENABLED[@]}"; do
     fi
     protected_symbols["$symbol"]=1
 
-    state="$(config_state "$REFERENCE" "$symbol")"
-    if [[ "$state" != "y" && "$state" != "m" ]]; then
-        printf 'ERROR: T590 reference does not enable CONFIG_%s (%s).\n' \
-            "$symbol" "$state" >&2
-        failed=1
-    fi
+    # The Debian state is protected, including disabled or version-absent
+    # drivers; hardware inventory must never select another source baseline.
+
 done
 
 
@@ -54,14 +51,14 @@ for symbol in "${DISABLE_NON_THINKPAD_PLATFORM[@]}"; do
         failed=1
     fi
 
-    state="$(config_state "$REFERENCE" "$symbol")"
-    if [[ "$state" == "absent" ]]; then
-        printf 'ERROR: Non-ThinkPad platform audit symbol CONFIG_%s is absent from the reference.\n' \
-            "$symbol" >&2
-        failed=1
-    fi
+
 done
 
+for symbol in X86_64 THINKPAD_ACPI DRM_I915 MOUSE_PS2 RMI4_SMB; do
+    validate_enabled_any "$REFERENCE" "$symbol" >/dev/null || failed=1
+done
+validate_enabled_bool "$REFERENCE" PREEMPT_VOLUNTARY >/dev/null || failed=1
+validate_disabled "$REFERENCE" PREEMPT_RT >/dev/null || failed=1
 (( failed == 0 )) || exit 1
 
 printf 'ThinkPad reference validation passed (%d protected, %d audited removals).\n' \

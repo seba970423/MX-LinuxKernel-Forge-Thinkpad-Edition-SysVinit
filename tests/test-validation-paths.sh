@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-REFERENCE="$REPO_ROOT/profiles/reference/thinkpad-t590-cachyos-7.1.8.config"
+REFERENCE="$REPO_ROOT/profiles/reference/debian-6.12.107-amd64.config"
 TEST_TMPDIR="$(mktemp -d --tmpdir kernelforge-validation-test.XXXXXX)"
 BASELINE="$TEST_TMPDIR/baseline.config"
 FINAL="$TEST_TMPDIR/final.config"
@@ -46,13 +46,12 @@ mkdir -p "$TEST_TMPDIR/tree"
 cp "$FINAL" "$TEST_TMPDIR/tree/.config"
 validate_kernel_policy "$TEST_TMPDIR/tree" "$BASELINE" >/dev/null
 
-# RT-style absence of THP is preserved, not forced on.
-sed -i \
-    -e 's/^# CONFIG_PREEMPT_RT is not set$/CONFIG_PREEMPT_RT=y/' \
-    -e '/^CONFIG_TRANSPARENT_HUGEPAGE/d' \
-    -e '/^# CONFIG_TRANSPARENT_HUGEPAGE/d' \
-    "$BASELINE" "$TEST_TMPDIR/tree/.config"
-validate_kernel_policy "$TEST_TMPDIR/tree" "$BASELINE" >/dev/null
+# RT preemption is excluded from this Debian standard-kernel edition.
+sed -i 's/^# CONFIG_PREEMPT_RT is not set$/CONFIG_PREEMPT_RT=y/' "$TEST_TMPDIR/tree/.config"
+if validate_kernel_policy "$TEST_TMPDIR/tree" "$BASELINE" >/dev/null 2>&1; then
+    printf 'ERROR: RT configuration passed Debian standard-profile validation.\n' >&2
+    exit 1
+fi
 
 cp "$REFERENCE" "$BASELINE"
 cp "$FINAL" "$TEST_TMPDIR/tree/.config"
@@ -104,18 +103,14 @@ validate_protected_symbol \
     "$TEST_TMPDIR/tree" "$BASELINE" "$TEST_TMPDIR/tree/.config" \
     FUTURE_THINKPAD_DRIVER >/dev/null
 
-# If that symbol exists in the selected source but its baseline is disabled,
-# protection is not being provided and validation must fail.
-printf 'config FUTURE_THINKPAD_DRIVER\n    tristate "Future ThinkPad driver"\n' \
-    >"$TEST_TMPDIR/tree/Kconfig"
+# A driver deliberately disabled by Debian must remain disabled.
+printf 'config FUTURE_THINKPAD_DRIVER\n    tristate "Future ThinkPad driver"\n' >"$TEST_TMPDIR/tree/Kconfig"
 printf '# CONFIG_FUTURE_THINKPAD_DRIVER is not set\n' >>"$BASELINE"
 printf '# CONFIG_FUTURE_THINKPAD_DRIVER is not set\n' >>"$TEST_TMPDIR/tree/.config"
-if validate_protected_symbol \
-    "$TEST_TMPDIR/tree" "$BASELINE" "$TEST_TMPDIR/tree/.config" \
-    FUTURE_THINKPAD_DRIVER >/dev/null 2>&1
-then
-    printf 'ERROR: Existing but disabled protected symbol passed validation.\n' >&2
+validate_protected_symbol "$TEST_TMPDIR/tree" "$BASELINE" "$TEST_TMPDIR/tree/.config" FUTURE_THINKPAD_DRIVER >/dev/null
+sed -i 's/# CONFIG_FUTURE_THINKPAD_DRIVER is not set/CONFIG_FUTURE_THINKPAD_DRIVER=m/' "$TEST_TMPDIR/tree/.config"
+if validate_protected_symbol "$TEST_TMPDIR/tree" "$BASELINE" "$TEST_TMPDIR/tree/.config" FUTURE_THINKPAD_DRIVER >/dev/null 2>&1; then
+    printf 'ERROR: Changed Debian driver baseline passed validation.\n' >&2
     exit 1
 fi
-
 printf 'Validation path tests passed.\n'

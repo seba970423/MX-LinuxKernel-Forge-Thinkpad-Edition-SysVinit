@@ -55,7 +55,7 @@ kconfig_symbol_exists() {
     local tree="$1"
     local symbol="$2"
 
-    grep -RqsE \
+    grep -RqsE --include='Kconfig*' \
         "^[[:space:]]*(menu)?config[[:space:]]+${symbol}([[:space:]]|$)" \
         "$tree"
 }
@@ -105,9 +105,8 @@ kconfig_apply_profile() {
     # --- Processor optimization profile ---
 
     case "${PROCESSOR_OPT:-}" in
-        native)
-            kconfig_require_symbol "$tree" X86_NATIVE_CPU || return 1
-            kconfig_enable "$tree" X86_NATIVE_CPU || return 1
+        debian)
+            # Debian's CPU selection is retained without adding CPU patches.
             ;;
         *)
             echo "ERROR: Unsupported PROCESSOR_OPT: ${PROCESSOR_OPT:-unset}" >&2
@@ -158,7 +157,7 @@ kconfig_apply_tick_frequency() {
     kconfig_require_symbol "$tree" "HZ_$hz" || return 1
     kconfig_require_symbol "$tree" HZ || return 1
     # Clear every exposed frequency choice, including variant-specific ones.
-    choices="$(grep -RhsE '^[[:space:]]*(menu)?config[[:space:]]+HZ_[0-9]+([[:space:]]|$)' "$tree" |
+    choices="$(grep -RhsE --include='Kconfig*' '^[[:space:]]*(menu)?config[[:space:]]+HZ_[0-9]+([[:space:]]|$)' "$tree" |
         awk '{print $2}' | sort -u)"
     [[ -n "$choices" ]] || {
         echo "ERROR: No kernel HZ frequency choices found." >&2
@@ -192,8 +191,7 @@ kconfig_apply_policy() {
     fi
 
     if [[ "$CPU_VENDOR" == "intel" && "${KEEP_INTEL_TDX:-yes}" == "no" ]]; then
-        kconfig_require_symbol "$tree" KVM_INTEL_TDX || return 1
-        kconfig_disable "$tree" KVM_INTEL_TDX || return 1
+        kconfig_disable_if_present "$tree" KVM_INTEL_TDX || return 1
     fi
 
     if [[ "$CPU_VENDOR" == "amd" && "${KEEP_AMD_SEV:-yes}" == "no" ]]; then
@@ -267,11 +265,11 @@ kconfig_probe_tuning() (
 )
 
 kconfig_detect_tuning_support() {
-    local tree="$1" variant="$2" status
+    local tree="$1" status
     AUTOGROUP_SUPPORTED="no"
     THP_SUPPORTED="no"
-    # BMQ is explicitly excluded, even if its source contains the symbol.
-    if [[ "$variant" != *bmq* && "$(kconfig_state "$tree/.config" SCHED_ALT)" != y ]] &&
+    # Honor actual Kconfig dependencies.
+    if [[ "$(kconfig_state "$tree/.config" SCHED_ALT)" != y ]] &&
        kconfig_symbol_exists "$tree" SCHED_AUTOGROUP; then
         if kconfig_probe_tuning "$tree" autogroup; then
             AUTOGROUP_SUPPORTED="yes"
@@ -280,9 +278,7 @@ kconfig_detect_tuning_support() {
             [[ "$status" == 1 ]] || return "$status"
         fi
     fi
-    # Guard both the selected RT variant and the resolved preemption mode.
-    if [[ "$variant" != linux-cachyos-rt && "$variant" != linux-cachyos-rt-* &&
-          "$(kconfig_state "$tree/.config" PREEMPT_RT)" != y ]] &&
+    if [[ "$(kconfig_state "$tree/.config" PREEMPT_RT)" != y ]] &&
        kconfig_symbol_exists "$tree" TRANSPARENT_HUGEPAGE &&
        kconfig_symbol_exists "$tree" TRANSPARENT_HUGEPAGE_MADVISE; then
         if kconfig_probe_tuning "$tree" thp; then

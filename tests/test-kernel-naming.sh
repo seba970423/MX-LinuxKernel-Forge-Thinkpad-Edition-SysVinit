@@ -4,33 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 TEST_TMPDIR="$(mktemp -d --tmpdir kernelforge-naming-test.XXXXXX)"
-VARIANT="linux-cachyos-rt-bore"
-PKGDIR="$TEST_TMPDIR/$VARIANT"
-
 trap 'rm -rf -- "$TEST_TMPDIR"' EXIT
-
-# shellcheck source=/dev/null
 source "$REPO_ROOT/lib/naming.sh"
-
-mkdir -p "$PKGDIR"
-printf '_pkgsuffix="cachyos-rt-bore"\npkgbase="linux-$_pkgsuffix"\n' >"$PKGDIR/PKGBUILD"
-
-default_name="$(prompt_kernel_name "$VARIANT" </dev/null)"
-[[ "$default_name" == "mx-thinkpad-rt-bore" ]] || {
-    printf 'ERROR: Empty naming response did not select the MX/Debian suffix.\n' >&2
-    exit 1
-}
-
-custom_name="$(printf 'y\nlinux-seba-rt-bore\n' | prompt_kernel_name "$VARIANT")"
-[[ "$custom_name" == "seba-rt-bore" ]] || {
-    printf 'ERROR: Valid custom kernel name was not normalized correctly.\n' >&2
-    exit 1
-}
-
-apply_custom_kernel_name "$TEST_TMPDIR" "$VARIANT" "$custom_name" >/dev/null
-grep -qx '_pkgsuffix="seba-rt-bore"' "$PKGDIR/PKGBUILD" || {
-    printf 'ERROR: Custom package suffix was not written to PKGBUILD.\n' >&2
-    exit 1
-}
-
+[[ "$(prompt_kernel_name </dev/null)" == mx-thinkpad-debian ]]
+[[ "$(printf 'y\nlinux-seba-debian\n' | prompt_kernel_name)" == seba-debian ]]
+[[ "$(printf 'y\nBAD NAME\nseba-debian\n' | prompt_kernel_name)" == seba-debian ]]
+if prompt_kernel_name <<< y; then echo 'ERROR: Missing custom name accepted.' >&2; exit 1; fi
+for invalid in '' '../bad' 'UPPER' 'has space' '-prefix'; do
+    if mx_valid_kernel_name "$invalid"; then echo 'ERROR: Invalid name accepted.' >&2; exit 1; fi
+done
 printf 'Kernel naming tests passed.\n'

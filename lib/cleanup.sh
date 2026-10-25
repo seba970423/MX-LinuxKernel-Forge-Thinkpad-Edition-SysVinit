@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # KernelForge post-install cleanup. Sourced by builder.sh, never run directly.
 # Only generated src/, pkg/ and TMPDIR contents are deleted. The checkout,
-# PKGBUILD, patches, logs and packages are retained.
+# source metadata, archives, logs and packages are retained.
 
 KERNELFORGE_CLEANUP_PERFORMED=0
 
@@ -109,7 +109,7 @@ kernelforge_cleanup_workdir() {
         { _kf_cleanup_error 'artifact destination escaped the workspace'; return 1; }
 
     # Preserve the final compiled Kconfig and any nearby baseline/backup configs.
-    # Keep the package directory itself: build logs, PKGBUILD, patches,
+    # Keep the package directory itself: build logs, source metadata, archives,
     # source archives, package manifest and .deb outputs remain there.
     local saved=0
     for config_file in "$tree"/.config "$tree"/.config.*; do
@@ -137,7 +137,7 @@ kernelforge_cleanup_workdir() {
     done
     KERNELFORGE_CLEANUP_PERFORMED=1
     export TMPDIR=/var/tmp
-    printf '==> Cleanup complete; retained package files, logs, patches and configs under: %s\n' "$workdir"
+    printf '==> Cleanup complete; retained package files, logs, source metadata and configs under: %s\n' "$workdir"
 }
 
 kernelforge_offer_postinstall_cleanup() {
@@ -157,7 +157,7 @@ kernelforge_offer_postinstall_cleanup() {
         fi
     done
     printf '==> Reclaimable build data: approximately %s MiB\n' "$((size_kib / 1024))"
-    printf '==> Preserved: kernel packages, build logs, PKGBUILD, patches, source archives, .config.\n'
+    printf '==> Preserved: kernel packages, build logs, source metadata and source packages, .config.\n'
     if [[ ! -t 0 ]]; then
         printf '==> Noninteractive run: cleanup skipped (safe default).\n'
         return 0
